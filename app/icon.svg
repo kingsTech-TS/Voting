@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <!-- Follows the browser/OS theme. The site's own Light/Dark switch swaps to /icon-light.svg or /icon-dark.svg. -->
+  <style>
+    .tile { fill: #0f8a5a; }
+    .paper { fill: #ffffff; }
+    .tick { stroke: #0f8a5a; }
+    .slot { stroke: #ffffff; }
+    .box { fill: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #22b981; }
+      .paper { fill: #04261a; }
+      .tick { stroke: #22b981; }
+      .slot { stroke: #04261a; }
+      .box { fill: #04261a; }
+    }
+  </style>
+  <rect class="tile" x="1" y="1" width="30" height="30" rx="9"/>
+  <path class="paper" d="M11 6.5h10v10H11z"/>
+  <path class="tick" d="m13.4 11.6 1.9 1.9 3.4-4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="slot" d="M6.5 16.5h19" stroke-width="1.8" stroke-linecap="round"/>
+  <path class="box" d="M8 19.5h16v6H8z" opacity="0.3"/>
+</svg>

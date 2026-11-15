@@ -1,26 +1,321 @@
 @import "tailwindcss";
 
+/*
+ * Theme: soft mint canvas, rounded white cards, green / yellow / pink accents.
+ * Light is the default; dark applies from the OS setting unless the viewer picked a theme
+ * (html[data-theme="light" | "dark"], set by the toggle before first paint).
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --background: #eef4f1;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-border: #e9efec;
+  --muted: #667085;
+  --subtle: #f3f7f5;
+  --border: #e6ece9;
+  --border-strong: #d3ddd8;
+  --ink: #111827;
+  --ink-fg: #ffffff;
+  --primary: #0f8a5a;
+  --primary-hover: #0b7349;
+  --primary-fg: #ffffff;
+  --primary-soft: #e2f5ec;
+  --danger: #d4335a;
+  --danger-soft: #fde8ee;
+  --warning: #a36f00;
+  --warning-soft: #fdf3d4;
+  --info: #2563c9;
+  --info-soft: #e6eefb;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 18px 36px -18px rgb(20 60 44 / 0.18);
+  --shadow-pop: 0 24px 60px -20px rgb(20 40 34 / 0.35);
+
+  /* Categorical chart series — validated (scripts/validate_palette.js) for light on #ffffff.
+     Fixed order; never cycled. Slot 2 (yellow) is < 3:1, so every chart shows labels + values. */
+  --series-1: #17a673;
+  --series-2: #e8a400;
+  --series-3: #e5486c;
+  --series-4: #2a78d6;
+  --series-5: #eb6834;
+  --series-6: #6250d6;
+  --series-track: #edf2ef;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --background: #0d1411;
+    --foreground: #eef3f1;
+    --card: #17201c;
+    --card-border: #222d28;
+    --muted: #9aa8a1;
+    --subtle: #1d2823;
+    --border: #25302b;
+    --border-strong: #34433c;
+    --ink: #eef3f1;
+    --ink-fg: #0d1411;
+    --primary: #22b981;
+    --primary-hover: #3cc993;
+    --primary-fg: #04261a;
+    --primary-soft: #11301f;
+    --danger: #ff6d8c;
+    --danger-soft: #3a1621;
+    --warning: #e3b44a;
+    --warning-soft: #33280e;
+    --info: #6ea7ff;
+    --info-soft: #14243d;
+    --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 18px 36px -20px rgb(0 0 0 / 0.7);
+    --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.8);
+    /* Dark steps of the same hues — validated against #18211d. */
+    --series-1: #199e70;
+    --series-2: #c98500;
+    --series-3: #f0587b;
+    --series-4: #3987e5;
+    --series-5: #e06a2f;
+    --series-6: #9085e9;
+    --series-track: #24302a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0d1411;
+  --foreground: #eef3f1;
+  --card: #17201c;
+  --card-border: #222d28;
+  --muted: #9aa8a1;
+  --subtle: #1d2823;
+  --border: #25302b;
+  --border-strong: #34433c;
+  --ink: #eef3f1;
+  --ink-fg: #0d1411;
+  --primary: #22b981;
+  --primary-hover: #3cc993;
+  --primary-fg: #04261a;
+  --primary-soft: #11301f;
+  --danger: #ff6d8c;
+  --danger-soft: #3a1621;
+  --warning: #e3b44a;
+  --warning-soft: #33280e;
+  --info: #6ea7ff;
+  --info-soft: #14243d;
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 18px 36px -20px rgb(0 0 0 / 0.7);
+  --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.8);
+  --series-1: #199e70;
+  --series-2: #c98500;
+  --series-3: #f0587b;
+  --series-4: #3987e5;
+  --series-5: #e06a2f;
+  --series-6: #9085e9;
+  --series-track: #24302a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-track: var(--series-track);
+  --font-sans: var(--font-app-sans);
+  --font-mono: var(--font-app-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-app-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+/* Rounded white card with a soft shadow — the main building block. */
+.surface {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-card);
+}
+
+/* Large bold headings. */
+.font-display {
+  font-family: var(--font-app-sans), system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+/* Figures that get compared: fixed-width digits. */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Motion ------------------------------------------------------------------------------------
+ * Small, quick, and purposeful. Everything here is switched off under prefers-reduced-motion
+ * (elements then simply render in their final state).
+ */
+:root {
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes ripple {
+  from { transform: scale(0.9); opacity: 0.45; }
+  to { transform: scale(2); opacity: 0; }
+}
+@keyframes float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+@keyframes grow-up {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes digit-in {
+  from { opacity: 0; transform: translateY(-45%); }
+  to { opacity: 1; transform: none; }
+}
+
+/* "backwards" (not "both"): a transform animation that keeps filling would make this wrapper the
+   containing block for position:fixed children (dialogs, the ballot bar) and shift them. */
+.animate-page-in { animation: page-in 0.45s var(--ease-out) backwards; }
+.animate-fade-in { animation: fade-in 0.25s ease-out both; }
+.animate-dialog-in { animation: dialog-in 0.32s var(--ease-out) both; }
+.animate-pop { animation: pop 0.38s var(--ease-spring) both; }
+.animate-ripple { animation: ripple 1.6s var(--ease-out) infinite; }
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-float-slow { animation: float 8s ease-in-out infinite; animation-delay: -2s; }
+.animate-float-late { animation: float 7s ease-in-out infinite; animation-delay: -4s; }
+.animate-grow { transform-origin: bottom; animation: grow-up 0.9s var(--ease-out) both; }
+.animate-digit { display: inline-block; animation: digit-in 0.35s var(--ease-out) both; }
+
+/* Children appear one after another. */
+.stagger > * { animation: page-in 0.5s var(--ease-out) backwards; }
+.stagger > :nth-child(2) { animation-delay: 60ms; }
+.stagger > :nth-child(3) { animation-delay: 120ms; }
+.stagger > :nth-child(4) { animation-delay: 180ms; }
+.stagger > :nth-child(5) { animation-delay: 240ms; }
+.stagger > :nth-child(6) { animation-delay: 300ms; }
+.stagger > :nth-child(n + 7) { animation-delay: 360ms; }
+
+/* ---- Empty-dashboard ballot box scene ---------------------------------------------------------- */
+.bb-scene * { transform-box: fill-box; }
+.bb-box { transform-origin: 50% 100%; animation: bb-bump 1.4s var(--ease-out) infinite; }
+.bb-shadow { transform-origin: center; animation: bb-shadow 1.4s var(--ease-out) infinite; }
+.bb-ballot { animation: bb-drop 4.2s cubic-bezier(0.45, 0, 0.3, 1) infinite; opacity: 0; }
+.bb-ballot:nth-of-type(2) { animation-delay: 1.4s; }
+.bb-ballot:nth-of-type(3) { animation-delay: 2.8s; }
+.bb-sparkle { transform-origin: center; animation: bb-twinkle 2.4s ease-in-out infinite; }
+.bb-sparkle:nth-of-type(2) { animation-delay: 0.8s; }
+.bb-sparkle:nth-of-type(3) { animation-delay: 1.6s; }
+.bb-sparkle:nth-of-type(4) { animation-delay: 1.2s; }
+.bb-orbit { transform-origin: 120px 130px; animation: bb-orbit 14s linear infinite; }
+
+@keyframes bb-drop {
+  0% { transform: translate(var(--bb-x, 0px), -70px) rotate(-14deg); opacity: 0; }
+  12% { opacity: 1; }
+  55% { transform: translate(0, 18px) rotate(3deg); opacity: 1; }
+  66% { transform: translate(0, 52px) rotate(0deg); opacity: 1; }
+  67%, 100% { transform: translate(0, 52px) rotate(0deg); opacity: 0; }
+}
+@keyframes bb-bump {
+  0%, 40%, 100% { transform: none; }
+  48% { transform: scale(1.04, 0.95); }
+  58% { transform: scale(0.98, 1.03); }
+  68% { transform: none; }
+}
+@keyframes bb-shadow {
+  0%, 40%, 100% { transform: scaleX(1); opacity: 1; }
+  48% { transform: scaleX(1.08); opacity: 0.8; }
+}
+@keyframes bb-twinkle {
+  0%, 100% { transform: scale(0.3) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1) rotate(45deg); opacity: 1; }
+}
+@keyframes bb-orbit {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Waiting-for-results hourglass -------------------------------------------------------------- */
+.hg-scene * { transform-box: fill-box; }
+.hg-glass { transform-origin: center; animation: hg-flip 5s cubic-bezier(0.6, 0, 0.3, 1) infinite; }
+.hg-top { transform-origin: 50% 100%; animation: hg-drain 5s linear infinite; }
+.hg-bottom { transform-origin: 50% 100%; animation: hg-fill 5s linear infinite; }
+.hg-stream { stroke-dasharray: 3 5; animation: hg-fall 0.5s linear infinite, hg-stream 5s linear infinite; }
+.hg-glow { transform-origin: center; animation: hg-glow 2.5s ease-in-out infinite; }
+
+@keyframes hg-flip {
+  0%, 86% { transform: rotate(0deg); }
+  100% { transform: rotate(180deg); }
+}
+@keyframes hg-drain {
+  0% { transform: scaleY(1); }
+  84%, 100% { transform: scaleY(0); }
+}
+@keyframes hg-fill {
+  0% { transform: scaleY(0.04); }
+  84%, 100% { transform: scaleY(1); }
+}
+@keyframes hg-fall {
+  to { stroke-dashoffset: -8; }
+}
+@keyframes hg-stream {
+  0%, 82% { opacity: 1; }
+  86%, 100% { opacity: 0; }
+}
+@keyframes hg-glow {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.6); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  /* Static fallback for the ballot box scene: one ballot resting in the slot. */
+  .bb-ballot:nth-of-type(1) { opacity: 1; transform: translate(0, 18px); }
 }
