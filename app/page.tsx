@@ -30,10 +30,10 @@ export default function Home() {
       <main className="flex-1">
         <section className="mx-auto grid w-full max-w-7xl items-center gap-12 px-5 pb-16 pt-8 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)] lg:pt-14">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary">
+            {/* <p className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary">
               <span className="size-1.5 rounded-full bg-primary" />
               Student union elections
-            </p>
+            </p> */}
             <h1 className="mt-6 text-[44px] font-extrabold leading-[1.05] tracking-[-0.04em] sm:text-[60px]">
               Your vote,
               <br />
