@@ -58,7 +58,7 @@ export function Brand({ href = "/", compact }: { href?: string; compact?: boolea
   return (
     <Link href={href} className="inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
       <Logo size={30} />
-      {!compact && <span className="text-[15px] font-extrabold tracking-[-0.02em]">Campus Voting</span>}
+      {!compact && <span className="text-[15px] font-extrabold tracking-[-0.02em]">Eksumsa Decides</span>}
     </Link>
   );
 }

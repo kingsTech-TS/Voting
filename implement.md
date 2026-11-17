@@ -428,7 +428,7 @@ Candidate and profile images are Cloudinary URLs that the backend has already cr
 
 ### Phase 0 — Setup (½ day)
 - [ ] Read the Next 16 docs listed at the top. Install the dependencies (§2.5).
-- [ ] Replace the starter `app/page.tsx` and `layout.tsx` metadata (title "Campus Voting").
+- [ ] Replace the starter `app/page.tsx` and `layout.tsx` metadata (title "Eksumsa Decides").
 - [ ] `.env.local` with `API_URL`. Run the backend locally (`docker compose up redis mongo`, `uvicorn app.main:app --reload`) and create a super admin with `python -m scripts.create_super_admin`.
 - [ ] `next.config.ts`: `images.remotePatterns` for Cloudinary, security `headers()`.
 - [ ] Base UI components and design tokens.

@@ -16,7 +16,7 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Campus Voting", template: "%s · Campus Voting" },
+  title: { default: "Eksumsa Decides", template: "%s · Eksumsa Decides" },
   description: "Student elections: register with your Matric or Registration number, vote once, see the results when polls close.",
 };
 

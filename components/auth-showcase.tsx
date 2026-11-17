@@ -210,7 +210,7 @@ function ResetMailCard() {
           <IconMail size={19} />
         </span>
         <div className="min-w-0">
-          <p className="text-xs text-muted">Campus Voting · just now</p>
+          <p className="text-xs text-muted">Eksumsa Decides · just now</p>
           <p className="truncate text-sm font-bold">Reset your password</p>
         </div>
       </div>

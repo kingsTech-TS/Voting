@@ -1,4 +1,4 @@
-# Campus Voting — Frontend
+# Eksumsa Decides — Frontend
 
 The web app for student union elections. Admins add students and build ballots, students register
 with their Matric or Registration number and vote once, and everyone sees the results when polls

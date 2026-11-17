@@ -390,7 +390,7 @@ function EmailPreview({ election, tally }: { election: ElectionOut; tally?: Tall
     <div className="rounded-3xl bg-background p-4 sm:p-5">
       <div className="mb-3 flex items-center gap-2 px-1">
         <Logo size={22} />
-        <span className="text-[13px] font-extrabold tracking-tight">Campus Voting</span>
+        <span className="text-[13px] font-extrabold tracking-tight">Eksumsa Decides</span>
         <span className="ml-auto text-[11px] text-muted">Subject: Results: {election.title}</span>
       </div>
       <div className="rounded-[22px] border border-card-border bg-card p-5 shadow-[var(--shadow-card)]">

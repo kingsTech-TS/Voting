@@ -66,7 +66,7 @@ export function ForgotPasswordForm() {
           <ul className="flex flex-col gap-2.5 text-sm text-muted">
             <li className="flex gap-2.5">
               <span className="num mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-subtle text-[11px] font-bold text-foreground">1</span>
-              Open the email from Campus Voting. Check spam or promotions if you don&apos;t see it.
+              Open the email from Eksumsa Decides. Check spam or promotions if you don&apos;t see it.
             </li>
             <li className="flex gap-2.5">
               <span className="num mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-subtle text-[11px] font-bold text-foreground">2</span>
