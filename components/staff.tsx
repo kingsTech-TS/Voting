@@ -32,11 +32,18 @@ export interface StudentFilters {
   search: string;
   level: string;
   registered: "" | "true" | "false";
+  paid: "" | "true" | "false";
   sort: StudentSort;
 }
 
 const PAGE_SIZE = 100;
-const EMPTY_FILTERS: StudentFilters = { page: 1, search: "", level: "", registered: "", sort: "name_asc" };
+const EMPTY_FILTERS: StudentFilters = { page: 1, search: "", level: "", registered: "", paid: "", sort: "name_asc" };
+
+const PAYMENT: { value: StudentFilters["paid"]; label: string }[] = [
+  { value: "", label: "Any payment" },
+  { value: "true", label: "Paid" },
+  { value: "false", label: "Not paid" },
+];
 
 const SORTS: { value: StudentSort; label: string }[] = [
   { value: "name_asc", label: "Name A–Z" },
@@ -81,7 +88,7 @@ export function StudentsTable({
   const level = filters.level;
 
   const { data, error, isPending, refetch, isFetching } = useQuery({
-    queryKey: ["students", endpoint, filters.page, search, level, filters.registered, filters.sort],
+    queryKey: ["students", endpoint, filters.page, search, level, filters.registered, filters.paid, filters.sort],
     queryFn: () =>
       api<Page<StudentOut>>(endpoint, {
         query: {
@@ -90,6 +97,7 @@ export function StudentsTable({
           search: search.trim() || undefined,
           level: level.trim() || undefined,
           is_registered: filters.registered || undefined,
+          paid: filters.paid || undefined,
           sort: filters.sort,
         },
       }),
@@ -97,7 +105,7 @@ export function StudentsTable({
   });
 
   const update = (patch: Partial<StudentFilters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
-  const filtered = Boolean(filters.search || filters.level || filters.registered || filters.sort !== "name_asc");
+  const filtered = Boolean(filters.search || filters.level || filters.registered || filters.paid || filters.sort !== "name_asc");
 
   return (
     <div className="flex flex-col gap-4">
@@ -151,6 +159,26 @@ export function StudentsTable({
               >
                 {r.value === "true" && <span className={clsx("size-1.5 rounded-full", on ? "bg-primary-fg" : "bg-primary")} aria-hidden="true" />}
                 {r.value === "false" && <span className={clsx("size-1.5 rounded-full", on ? "bg-primary-fg" : "bg-danger")} aria-hidden="true" />}
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex rounded-xl bg-card p-1 text-[13px] font-semibold shadow-[var(--shadow-card)] ring-1 ring-card-border" role="radiogroup" aria-label="Payment status">
+          {PAYMENT.map((r) => {
+            const on = filters.paid === r.value;
+            return (
+              <button
+                key={r.label}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => update({ paid: r.value })}
+                className={clsx(
+                  "rounded-lg px-3 py-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-primary",
+                  on ? "bg-ink text-ink-fg" : "text-muted hover:bg-subtle hover:text-foreground",
+                )}
+              >
                 {r.label}
               </button>
             );
@@ -218,6 +246,7 @@ export function StudentsTable({
                 <Th>Matric / Reg no.</Th>
                 <Th>Level</Th>
                 <Th>Status</Th>
+                <Th>Payment</Th>
                 <Th>Added</Th>
                 {actions && <Th className="text-right">Actions</Th>}
               </tr>
@@ -260,6 +289,15 @@ export function StudentsTable({
                       </span>
                       <span className={s.is_registered ? undefined : "text-muted"}>{s.is_registered ? "Registered" : "Not registered"}</span>
                     </span>
+                  </Td>
+                  <Td>
+                    {s.paid ? (
+                      <Badge tone="success" className="gap-1">
+                        <IconCheck size={11} strokeWidth={3} /> Paid
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral">Not paid</Badge>
+                    )}
                   </Td>
                   <Td className="text-muted">{formatDate(s.created_at)}</Td>
                   {actions && <Td className="text-right">{actions(s)}</Td>}

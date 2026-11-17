@@ -74,6 +74,9 @@ export interface StudentOut {
   level: string;
   email: string | null;
   is_registered: boolean;
+  /** Paid their dues: only paid students can vote. */
+  paid: boolean;
+  paid_at: string | null;
   profile_picture_url: string | null;
   created_at: string;
   registered_at: string | null;
@@ -86,6 +89,7 @@ export interface StudentProfileOut {
   full_name: string;
   level: string;
   email: string | null;
+  paid: boolean;
   profile_picture_url: string | null;
   onboarding_required: "profile_picture" | null;
 }
@@ -130,6 +134,9 @@ export interface CandidateOut {
   id: string;
   full_name: string;
   image_url: string | null;
+  /** Set when the candidate was picked from the student list. */
+  student_id?: string | null;
+  level?: string | null;
 }
 
 export interface PositionOut {
@@ -160,12 +167,27 @@ export interface ElectionOut {
 
 export interface ResultsShareOut {
   status: "sending" | "sent" | "failed";
+  /** individual = one email per student; broadcast = one Resend broadcast to the student segment */
+  method: "individual" | "broadcast";
+  /** broadcast only: syncing contacts to Resend, then sending */
+  phase: "syncing" | "sending" | null;
+  synced: number;
+  sync_todo: number;
+  /** Resend's own broadcast status, e.g. queued, sending, sent */
+  provider_status: string | null;
+  error: string | null;
   requested_at: string;
   requested_by_email: string | null;
   recipients: number;
   sent: number;
   failed: number;
   completed_at: string | null;
+}
+
+export interface EmailConfigOut {
+  results_delivery: "individual" | "broadcast";
+  provider: string;
+  configured: boolean;
 }
 
 export interface ShareResultsOut {
@@ -210,7 +232,7 @@ export interface TallyOut {
   source: "live" | "database";
 }
 
-export type DashboardState = "no_election" | "upcoming" | "ongoing" | "voted" | "ended";
+export type DashboardState = "no_election" | "upcoming" | "ongoing" | "voted" | "not_paid" | "ended";
 
 export interface DashboardOut {
   state: DashboardState;
@@ -285,6 +307,7 @@ export interface SessionStateOut {
   levels: LevelCount[];
   other_levels: LevelCount[];
   total_students: number;
+  paid_students: number;
   history: { session: string; started_at: string; started_by_email: string | null; promoted: number; graduated_deleted: number }[];
 }
 
@@ -292,4 +315,29 @@ export interface SessionAdvanceOut {
   state: SessionStateOut;
   promoted: number;
   graduated_deleted: number;
+}
+
+export type PaidRowStatus = "mark" | "already" | "not_found" | "duplicate" | "invalid";
+
+export interface PaidPreviewRow {
+  line: number;
+  identifier: string;
+  name_in_file: string;
+  student_name: string | null;
+  level: string | null;
+  status: PaidRowStatus;
+  note: string | null;
+}
+
+export interface PaidPreviewOut {
+  format: ImportFormat;
+  filename: string;
+  rows: PaidPreviewRow[];
+  counts: Record<PaidRowStatus, number>;
+}
+
+export interface PaidConfirmOut {
+  marked: number;
+  already_paid: number;
+  not_found: string[];
 }

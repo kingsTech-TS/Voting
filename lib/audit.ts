@@ -65,6 +65,20 @@ export const ACTIONS: Record<string, ActionInfo> = {
     tone: "danger",
     describe: (m) => `Deleted ${plural(m.deleted, "student")} and all their data.`,
   },
+  "student.paid_import": {
+    label: "Paid list imported",
+    category: "Students",
+    tone: "success",
+    describe: (m) =>
+      `Imported a paid list${m.filename ? ` (${q(m.filename)})` : ""}: ${plural(m.marked, "student")} marked as paid` +
+      (Number(m.not_found) ? `, ${plural(m.not_found, "student")} not found in the student list.` : "."),
+  },
+  "student.paid_update": {
+    label: "Payment updated",
+    category: "Students",
+    tone: "neutral",
+    describe: (m) => `Marked ${plural(m.students, "student")} as ${m.paid ? "paid" : "not paid"}.`,
+  },
   "session.set": { label: "Session set", category: "Session", tone: "info", describe: (m) => `Set the current academic session to ${m.session}.` },
   "session.advance": {
     label: "New session started",
@@ -170,6 +184,12 @@ const FIELD_LABELS: Record<string, string> = {
   session: "Session",
   promoted: "Moved up a level",
   graduated_deleted: "Graduates deleted",
+  paid_cleared: "Paid status cleared",
+  marked: "Marked as paid",
+  already_paid: "Already paid",
+  not_found: "Not in student list",
+  students: "Students",
+  paid: "Paid",
   format: "File type",
 };
 

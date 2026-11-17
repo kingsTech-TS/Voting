@@ -50,6 +50,12 @@ export function StudentProfile() {
                 <dt className="text-xs font-medium text-muted">Level</dt>
                 <dd className="num mt-0.5 font-medium">{data.level}</dd>
               </div>
+              <div>
+                <dt className="text-xs font-medium text-muted">Dues</dt>
+                <dd className={data.paid ? "mt-0.5 font-semibold text-primary" : "mt-0.5 font-medium text-muted"}>
+                  {data.paid ? "Paid ✓" : "Not confirmed"}
+                </dd>
+              </div>
             </dl>
           </div>
         </div>

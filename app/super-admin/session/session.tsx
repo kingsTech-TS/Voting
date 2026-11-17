@@ -229,6 +229,7 @@ function AdvanceDialog({
   const finalCount = state.levels.find((l) => l.level === FINAL)?.count ?? 0;
   const [step, setStep] = useState<1 | 2>(finalCount > 0 ? 1 : 2);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [resetPaid, setResetPaid] = useState(true);
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -239,7 +240,7 @@ function AdvanceDialog({
     setError(null);
     try {
       const res = await api<SessionAdvanceOut>("super-admin/session/advance", {
-        json: { to_session: next, delete_final_level: confirmDelete },
+        json: { to_session: next, delete_final_level: confirmDelete, reset_paid: resetPaid },
       });
       queryClient.setQueryData(["session"], res.state);
       void queryClient.invalidateQueries({ queryKey: ["students"] });
@@ -334,6 +335,21 @@ function AdvanceDialog({
                 </p>
               )}
             </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border p-4 hover:bg-subtle">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-[var(--primary)]"
+                checked={resetPaid}
+                onChange={(e) => setResetPaid(e.target.checked)}
+              />
+              <span className="text-sm">
+                <span className="font-semibold">Clear everyone&apos;s paid status</span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  Dues are paid per session. {state.paid_students.toLocaleString()} students are currently marked as paid — after this, admins
+                  import the new paid list. Results of past elections are not affected.
+                </span>
+              </span>
+            </label>
             <div className="rounded-2xl bg-primary-soft p-4 text-sm">
               <p className="font-bold text-primary">Then — add the new 100 level</p>
               <p className="mt-1 text-foreground/80">

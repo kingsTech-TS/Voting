@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { IconPlus, IconUpload } from "@/components/icons";
+import { IconCheck, IconPlus, IconUpload } from "@/components/icons";
 import { StudentsTable } from "@/components/staff";
 import { buttonClass } from "@/components/styles";
 import { Alert, Button, ConfirmDialog, Dialog, PageHeader, TextField } from "@/components/ui";
@@ -26,6 +26,21 @@ export function AdminStudents() {
   const firstYear = session.data?.levels.find((l) => l.level === "100")?.count;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["students"] });
+
+  const markPaid = async (students: StudentOut[], paid: boolean, clear: () => void) => {
+    setBusy(true);
+    try {
+      const res = await api<{ updated: number }>("admin/students/paid", { json: { ids: students.map((s) => s.id), paid } });
+      toast.success(`${res.updated.toLocaleString()} student${res.updated === 1 ? "" : "s"} marked as ${paid ? "paid" : "not paid"}.`);
+      clear();
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const runBulkDelete = async () => {
     if (!bulk) return;
@@ -72,12 +87,23 @@ export function AdminStudents() {
             <Link href="/admin/students/import" className={buttonClass("secondary")}>
               <IconUpload size={16} /> Import list
             </Link>
+            <Link href="/admin/students/paid" className={buttonClass("secondary")}>
+              <IconCheck size={16} /> Import paid list
+            </Link>
             <Button variant="ink" onClick={() => setAdding(true)}>
               <IconPlus size={16} /> Add student
             </Button>
           </>
         }
       />
+      {session.data && session.data.total_students > 0 && session.data.paid_students === 0 && (
+        <Alert tone="warning" title="No student is marked as paid" className="mb-4">
+          Only paid students can vote. Import the list of students who have paid their dues.{" "}
+          <Link href="/admin/students/paid" className="font-semibold underline">
+            Import paid list
+          </Link>
+        </Alert>
+      )}
       {session.data?.current && firstYear === 0 && (
         <Alert tone="info" title={`Session ${session.data.current}: no 100 level students yet`} className="mb-4">
           Everyone has moved up a level for the new session. Import the new 100 level list to let them register and vote.{" "}
@@ -89,9 +115,17 @@ export function AdminStudents() {
       <StudentsTable
         endpoint="admin/students"
         bulkActions={(students, clear) => (
-          <Button variant="danger" size="sm" onClick={() => setBulk({ students, clear })}>
-            Delete {students.length.toLocaleString()} student{students.length === 1 ? "" : "s"}
-          </Button>
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void markPaid(students, true, clear)} disabled={busy}>
+              <IconCheck size={14} /> Mark as paid
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => void markPaid(students, false, clear)} disabled={busy}>
+              Mark as not paid
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setBulk({ students, clear })}>
+              Delete {students.length.toLocaleString()} student{students.length === 1 ? "" : "s"}
+            </Button>
+          </>
         )}
         actions={(s) => (
           <div className="flex justify-end gap-1">
@@ -146,30 +180,66 @@ export function AdminStudents() {
   );
 }
 
+type AddTab = "student" | "paid";
+
 function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const empty = { identifier: "", full_name: "", level: "" };
+  const [tab, setTab] = useState<AddTab>("student");
   const [values, setValues] = useState(empty);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
+  // In the "Paid student" tab: the number is already on the list, offer to mark that student as paid.
+  const [existing, setExisting] = useState<string | null>(null);
+  const paid = tab === "paid";
+
+  const switchTab = (t: AddTab) => {
+    setTab(t);
+    setExisting(null);
+    setErrors({});
+  };
 
   const submit = async (e: FormEvent, addAnother: boolean) => {
     e.preventDefault();
     const result = check(studentCreateSchema, values);
     setErrors(result.errors ?? {});
+    setExisting(null);
     if (!result.data) return;
     setLoading(true);
     try {
       const s = await api<StudentOut>("admin/students", {
-        json: { identifier: normalizeIdentifier(values.identifier), full_name: values.full_name.trim(), level: values.level.trim() },
+        json: {
+          identifier: normalizeIdentifier(values.identifier),
+          full_name: values.full_name.trim(),
+          level: values.level.trim(),
+          paid,
+        },
       });
-      toast.success(`${s.full_name} added.`);
+      toast.success(paid ? `${s.full_name} added and marked as paid.` : `${s.full_name} added.`);
       onSaved();
       setValues(addAnother ? { ...empty, level: values.level } : empty);
       if (!addAnother) onClose();
     } catch (err) {
-      if (err instanceof ApiError && (err.code === "STUDENT_EXISTS" || err.field === "identifier")) {
+      if (err instanceof ApiError && err.code === "STUDENT_EXISTS" && paid) {
+        setExisting(normalizeIdentifier(values.identifier));
+      } else if (err instanceof ApiError && (err.code === "STUDENT_EXISTS" || err.field === "identifier")) {
         setErrors({ identifier: err.message });
       } else toast.error(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markExistingPaid = async () => {
+    if (!existing) return;
+    setLoading(true);
+    try {
+      const res = await api<{ marked: number; already_paid: number }>("admin/students/paid/confirm", { json: { identifiers: [existing] } });
+      toast.success(res.marked ? `${existing} marked as paid.` : `${existing} was already marked as paid.`);
+      onSaved();
+      setExisting(null);
+      setValues(empty);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -186,20 +256,63 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
             Save and add another
           </Button>
           <Button onClick={(e) => void submit(e, false)} loading={loading}>
-            Save
+            {paid ? "Save as paid" : "Save"}
           </Button>
         </>
       }
     >
       <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e, false)} noValidate>
+        <div className="grid grid-cols-2 rounded-xl bg-subtle p-1 text-[13px] font-semibold" role="tablist" aria-label="Type of student">
+          {([
+            ["student", "Student"],
+            ["paid", "Paid student"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => switchTab(key)}
+              className={
+                tab === key
+                  ? "flex items-center justify-center gap-1.5 rounded-lg bg-card px-3 py-2 text-foreground shadow-sm"
+                  : "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-muted transition-colors hover:text-foreground"
+              }
+            >
+              {key === "paid" && <IconCheck size={14} strokeWidth={2.5} className={tab === key ? "text-primary" : undefined} />}
+              {label}
+            </button>
+          ))}
+        </div>
+        {paid ? (
+          <p className="rounded-xl bg-primary-soft px-3.5 py-2.5 text-xs leading-relaxed text-foreground/80">
+            The student is added <span className="font-semibold text-primary">already marked as paid</span>, so they can vote. Use this for
+            students who paid but aren&apos;t on the student list yet.
+          </p>
+        ) : (
+          <p className="text-xs leading-relaxed text-muted">The student is added as not paid. Mark them paid later, or import the paid list.</p>
+        )}
         <TextField
           label="Matric / Registration number"
           value={values.identifier}
-          onChange={(e) => setValues((v) => ({ ...v, identifier: e.target.value }))}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, identifier: e.target.value }));
+            setExisting(null);
+          }}
           onBlur={() => setValues((v) => ({ ...v, identifier: normalizeIdentifier(v.identifier) }))}
           error={errors.identifier}
           hint={IDENTIFIER_HINT}
         />
+        {existing && (
+          <Alert tone="info" title="This student is already on the list">
+            <span className="flex flex-wrap items-center gap-2">
+              Mark <span className="font-mono">{existing}</span> as paid instead?
+              <Button size="sm" onClick={() => void markExistingPaid()} loading={loading}>
+                <IconCheck size={14} /> Mark as paid
+              </Button>
+            </span>
+          </Alert>
+        )}
         <TextField
           label="Full name"
           value={values.full_name}

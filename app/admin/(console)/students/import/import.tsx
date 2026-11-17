@@ -18,7 +18,7 @@ const TEMPLATE = "identifier,full_name\n220703012,Jane Doe\n202650372846LA,John 
 const LEVELS = ["100", "200", "300", "400", "500", "600"];
 const PAGE_SIZE = 100;
 
-const FORMAT_INFO: Record<ImportFormat, { label: string; ext: string; tone: string }> = {
+export const FORMAT_INFO: Record<ImportFormat, { label: string; ext: string; tone: string }> = {
   csv: { label: "CSV", ext: "CSV", tone: "bg-primary-soft text-primary" },
   xlsx: { label: "Excel", ext: "XLSX", tone: "bg-primary-soft text-primary" },
   docx: { label: "Word", ext: "DOCX", tone: "bg-info-soft text-info" },
@@ -32,7 +32,7 @@ const STATUS: Record<ImportRowStatus, { label: string; tone: "success" | "neutra
   invalid: { label: "Can't read", tone: "danger" },
 };
 
-function download(name: string, content: string) {
+export function download(name: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
@@ -41,7 +41,7 @@ function download(name: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-const csvCell = (v: string | number) => {
+export const csvCell = (v: string | number) => {
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
@@ -55,7 +55,7 @@ function formatOf(f: File): ImportFormat | null {
   return null;
 }
 
-type Step = "upload" | "review" | "done";
+export type Step = "upload" | "review" | "done";
 
 export function ImportStudents() {
   const queryClient = useQueryClient();
@@ -111,10 +111,10 @@ export function ImportStudents() {
 
 // ---- stepper --------------------------------------------------------------------------------------
 
-function Stepper({ step }: { step: Step }) {
+export function Stepper({ step, reviewLabel = "Review & choose level" }: { step: Step; reviewLabel?: string }) {
   const steps: { key: Step; label: string }[] = [
     { key: "upload", label: "Upload file" },
-    { key: "review", label: "Review & choose level" },
+    { key: "review", label: reviewLabel },
     { key: "done", label: "Done" },
   ];
   const current = steps.findIndex((s) => s.key === step);
@@ -144,7 +144,19 @@ function Stepper({ step }: { step: Step }) {
 
 // ---- step 1: upload -------------------------------------------------------------------------------
 
-function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void }) {
+export function UploadStep<T = ImportPreviewOut>({
+  onPreview,
+  endpoint = "admin/students/bulk/preview",
+  heading = "Drop your class list here",
+  reading: readingText = "Finding Matric/Reg numbers and names",
+  tips,
+}: {
+  onPreview: (p: T) => void;
+  endpoint?: string;
+  heading?: string;
+  reading?: string;
+  tips?: ReactNode;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState<File | null>(null);
@@ -173,7 +185,7 @@ function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void })
     try {
       const form = new FormData();
       form.append("file", f);
-      onPreview(await api<ImportPreviewOut>("admin/students/bulk/preview", { form }));
+      onPreview(await api<T>(endpoint, { form }));
     } catch (err) {
       setProblem(errorMessage(err));
     } finally {
@@ -209,7 +221,7 @@ function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void })
               </span>
               <div>
                 <p className="text-sm font-semibold">Reading {reading.name}…</p>
-                <p className="mt-1 text-xs text-muted">Finding Matric/Reg numbers and names</p>
+                <p className="mt-1 text-xs text-muted">{readingText}</p>
               </div>
             </>
           ) : (
@@ -218,7 +230,7 @@ function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void })
                 <IconUpload size={24} />
               </span>
               <div>
-                <p className="text-base font-bold">Drop your class list here</p>
+                <p className="text-base font-bold">{heading}</p>
                 <p className="mt-1 text-sm text-muted">CSV up to 2 MB · Excel, Word or PDF up to 10 MB</p>
               </div>
               <div className="flex gap-2" aria-hidden="true">
@@ -248,6 +260,8 @@ function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void })
       <Card className="flex flex-col gap-4">
         <h2 className="text-base font-bold tracking-tight">What the file needs</h2>
         <ul className="flex flex-col gap-3 text-sm">
+          {tips ?? (
+          <>
           <Tip>
             Each student&apos;s <b>Matric number</b> (9 or 10 digits) or <b>Registration number</b> (12 digits + 2 letters) next to their{" "}
             <b>full name</b>.
@@ -260,13 +274,15 @@ function UploadStep({ onPreview }: { onPreview: (p: ImportPreviewOut) => void })
             No level column needed — you&apos;ll choose the level for everyone in the file in the next step. Upload one level at a time.
           </Tip>
           <Tip>PDFs must contain real text. Scanned images can&apos;t be read — use the original Word or Excel file instead.</Tip>
+          </>
+          )}
         </ul>
       </Card>
     </div>
   );
 }
 
-function Tip({ children }: { children: ReactNode }) {
+export function Tip({ children }: { children: ReactNode }) {
   return (
     <li className="flex gap-2.5 leading-relaxed text-foreground/85">
       <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">

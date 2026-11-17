@@ -2,20 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import clsx from "clsx";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { ShareResultsCard } from "@/components/archives";
 import { Countdown, ElectionTimes, ImagePicker, StateBadge } from "@/components/election";
 import { ElectionForm, electionToForm } from "@/components/election-form";
-import { useElection } from "@/components/staff";
-import { IconChart, IconCheck, IconLock, IconPencil, IconPlus, IconUpload, IconX } from "@/components/icons";
+import { useDebounced, useElection } from "@/components/staff";
+import { IconChart, IconCheck, IconImage, IconLock, IconPencil, IconPlus, IconSearch, IconUpload, IconUsers, IconX } from "@/components/icons";
 import { INITIAL_CROP, ImageAdjuster, cropImage, fileFromUrl, type CropState } from "@/components/image-adjuster";
 import { buttonClass } from "@/components/styles";
 import { Alert, Avatar, BackLink, Button, ConfirmDialog, Dialog, ErrorState, Input, PageSpinner, Panel, Spinner, TextField } from "@/components/ui";
 import { api, type ApiOptions } from "@/lib/api/client";
 import { ApiError, errorMessage } from "@/lib/api/errors";
-import type { CandidateOut, ElectionOut, MessageOut, PositionOut } from "@/lib/api/types";
+import type { CandidateOut, ElectionOut, MessageOut, Page, PositionOut, SessionStateOut, StudentOut } from "@/lib/api/types";
 import { serverNow, toAwareISO } from "@/lib/time";
 import { candidateNameSchema, check, checkImage, positionSchema } from "@/lib/validation";
 
@@ -23,6 +24,7 @@ export function ElectionBuilder({ id }: { id: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: election, error, isPending, refetch } = useElection(id);
+  const session = useQuery({ queryKey: ["session"], queryFn: () => api<SessionStateOut>("admin/session"), staleTime: 60_000 });
   const [confirm, setConfirm] = useState<"publish" | "unpublish" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
   const [publishProblems, setPublishProblems] = useState<string[]>([]);
@@ -46,6 +48,9 @@ export function ElectionBuilder({ id }: { id: string }) {
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const editable = election.state === "draft" || election.state === "upcoming";
+  // Students already standing in this election (student id -> position name).
+  const taken = new Map<string, string>();
+  for (const p of election.positions) for (const c of p.candidates) if (c.student_id) taken.set(c.student_id, p.name);
 
   const problems = [
     election.positions.length === 0 && "Add at least one position.",
@@ -124,6 +129,14 @@ export function ElectionBuilder({ id }: { id: string }) {
         </div>
       </div>
 
+      {(election.state === "draft" || election.state === "upcoming") && session.data && session.data.paid_students === 0 && (
+        <Alert tone="warning" title="No student is marked as paid yet">
+          Only paid students can vote, so nobody could vote in this election right now.{" "}
+          <Link href="/admin/students/paid" className="font-semibold underline">
+            Import the paid list
+          </Link>
+        </Alert>
+      )}
       {election.state === "ongoing" && (
         <Alert tone="warning" title="Voting is in progress">
           The election can no longer be edited. Only the super admin can stop it.
@@ -208,7 +221,7 @@ export function ElectionBuilder({ id }: { id: string }) {
           </p>
         </div>
         {election.positions.map((p, i) => (
-          <PositionCard key={p.id} index={i} electionId={id} position={p} editable={editable} mutate={mutate} />
+          <PositionCard key={p.id} index={i} electionId={id} position={p} editable={editable} mutate={mutate} taken={taken} />
         ))}
         {editable && <AddPosition electionId={id} mutate={mutate} />}
         {!editable && election.positions.length === 0 && <p className="text-sm text-muted">No positions.</p>}
@@ -292,12 +305,14 @@ function PositionCard({
   position,
   editable,
   mutate,
+  taken,
 }: {
   index: number;
   electionId: string;
   position: PositionOut;
   editable: boolean;
   mutate: Mutate;
+  taken: Map<string, string>;
 }) {
   const base = `admin/elections/${electionId}/positions/${position.id}`;
   const [renaming, setRenaming] = useState(false);
@@ -365,7 +380,8 @@ function PositionCard({
                 </div>
               )}
             </div>
-            <p className="truncate px-3 py-2 text-[13px] font-medium">{c.full_name}</p>
+            <p className="truncate px-3 pt-2 text-[13px] font-medium">{c.full_name}</p>
+            <p className="truncate px-3 pb-2 text-[11px] text-muted">{c.student_id ? `${c.level ? `${c.level} level · ` : ""}Student` : "\u00a0"}</p>
             {editable && (
               <div className="absolute right-2 top-2 flex gap-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                 <button
@@ -408,7 +424,7 @@ function PositionCard({
         {!editable && position.candidates.length === 0 && <p className="text-sm text-muted">No candidates.</p>}
       </div>
 
-      {adding && <CandidateDialog base={base} positionName={position.name} onClose={() => setAdding(false)} mutate={mutate} />}
+      {adding && <CandidateDialog base={base} positionName={position.name} onClose={() => setAdding(false)} mutate={mutate} taken={taken} />}
       {editingCandidate && (
         <CandidateDialog
           key={editingCandidate.id}
@@ -445,6 +461,7 @@ function CandidateDialog({
   candidate,
   onClose,
   mutate,
+  taken,
 }: {
   base: string;
   positionName: string;
@@ -452,8 +469,14 @@ function CandidateDialog({
   candidate?: CandidateOut;
   onClose: () => void;
   mutate: Mutate;
+  taken?: Map<string, string>;
 }) {
   const editing = !!candidate;
+  const [source, setSource] = useState<"student" | "manual">("student");
+  const [student, setStudent] = useState<StudentOut | null>(null);
+  const [studentError, setStudentError] = useState<string | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const fromStudent = !editing && source === "student";
   const [fullName, setFullName] = useState(candidate?.full_name ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [crop, setCrop] = useState<CropState>(INITIAL_CROP);
@@ -484,9 +507,39 @@ function CandidateDialog({
     }
   };
 
+  const takeProfilePhoto = async () => {
+    if (!student?.profile_picture_url) return;
+    setLoadingProfile(true);
+    try {
+      choose(await fileFromUrl(student.profile_picture_url, `${student.full_name}.jpg`));
+    } catch (err) {
+      setErrors((e) => ({ ...e, image: errorMessage(err) }));
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
   const save = async () => {
-    const result = check(candidateNameSchema, { full_name: fullName });
     const needsPhoto = !editing && !file;
+    if (fromStudent) {
+      setStudentError(student ? null : "Choose a student from the list.");
+      setErrors({ image: needsPhoto ? "Upload a photo of the candidate." : null });
+      if (!student || needsPhoto) return;
+      setLoading(true);
+      try {
+        const form = new FormData();
+        form.append("student_id", student.id);
+        form.append("image", await cropImage(file!, crop));
+        if (await mutate(`${base}/candidates`, { form }, `${student.full_name} added.`)) onClose();
+      } catch (err) {
+        setErrors((e) => ({ ...e, image: errorMessage(err) }));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const result = check(candidateNameSchema, { full_name: fullName });
     setErrors({ full_name: result.errors?.full_name, image: needsPhoto ? "Choose a photo of the candidate." : null });
     if (!result.data || needsPhoto) return;
 
@@ -532,7 +585,73 @@ function CandidateDialog({
       }
     >
       <div className="flex flex-col gap-5">
-        <TextField label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} error={errors.full_name} autoFocus />
+        {!editing && (
+          <div className="grid grid-cols-2 rounded-xl bg-subtle p-1 text-[13px] font-semibold" role="tablist" aria-label="How to add the candidate">
+            {([
+              ["student", "From student list"],
+              ["manual", "Type a name"],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={source === key}
+                onClick={() => setSource(key)}
+                className={clsx(
+                  "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 transition-colors",
+                  source === key ? "bg-card text-foreground shadow-sm" : "text-muted hover:text-foreground",
+                )}
+              >
+                {key === "student" ? <IconUsers size={15} /> : <IconPencil size={14} />}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {fromStudent ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[13px] font-medium">
+              Student <span className="text-danger">*</span>
+            </p>
+            {student ? (
+              <div className="flex items-center gap-3 rounded-2xl bg-primary-soft p-3">
+                <Avatar src={student.profile_picture_url} name={student.full_name} size={44} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{student.full_name}</p>
+                  <p className="truncate text-xs text-muted">
+                    <span className="font-mono">{student.identifier}</span> · {student.level} level
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStudent(null);
+                    setFile(null);
+                  }}
+                >
+                  Change
+                </Button>
+              </div>
+            ) : (
+              <StudentPicker
+                taken={taken}
+                onPick={(s) => {
+                  setStudent(s);
+                  setStudentError(null);
+                }}
+              />
+            )}
+            {studentError && (
+              <p role="alert" className="text-xs font-medium text-danger">
+                {studentError}
+              </p>
+            )}
+          </div>
+        ) : (
+          <TextField label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} error={errors.full_name} autoFocus />
+        )}
 
         <div className="flex flex-col gap-2">
           <p className="text-[13px] font-medium">Photo</p>
@@ -567,8 +686,19 @@ function CandidateDialog({
                 </div>
               </div>
             </div>
+          ) : fromStudent && !student ? (
+            <p className="rounded-2xl bg-subtle px-4 py-6 text-center text-xs text-muted">Choose a student first, then upload their photo.</p>
           ) : (
-            <ImagePicker file={null} error={null} label="Choose photo" onChange={(f, problem) => (problem ? setErrors((e) => ({ ...e, image: problem })) : choose(f))} />
+            <>
+              <ImagePicker file={null} error={null} label="Choose photo" onChange={(f, problem) => (problem ? setErrors((e) => ({ ...e, image: problem })) : choose(f))} />
+              {fromStudent && student?.profile_picture_url && (
+                <div className="flex justify-center">
+                  <Button variant="secondary" size="sm" onClick={() => void takeProfilePhoto()} loading={loadingProfile}>
+                    <IconImage size={14} /> Use their profile picture
+                  </Button>
+                </div>
+              )}
+            </>
           )}
           {errors.image && (
             <p role="alert" className="text-center text-xs font-medium text-danger">
@@ -589,5 +719,73 @@ function CandidateDialog({
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/** Search the student list and pick one. Students already standing in this election can't be picked. */
+function StudentPicker({ taken, onPick }: { taken?: Map<string, string>; onPick: (s: StudentOut) => void }) {
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search, 250);
+  const { data, isFetching, error } = useQuery({
+    queryKey: ["students", "candidate-picker", q],
+    queryFn: () => api<Page<StudentOut>>("admin/students", { query: { search: q.trim() || undefined, page_size: 8, sort: "name_asc" } }),
+    placeholderData: keepPreviousData,
+  });
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border">
+      <div className="relative border-b border-border">
+        <IconSearch size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          type="search"
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or Matric/Reg no."
+          aria-label="Search students"
+          className="h-11 w-full bg-card pl-10 pr-10 text-sm outline-none placeholder:text-muted/80"
+        />
+        {isFetching && <Spinner className="absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />}
+      </div>
+      <ul className="max-h-64 overflow-y-auto p-1" role="listbox" aria-label="Students">
+        {error ? (
+          <li className="px-3 py-4 text-center text-xs text-danger">{errorMessage(error)}</li>
+        ) : !data ? (
+          <li className="px-3 py-6 text-center text-xs text-muted">Loading students…</li>
+        ) : data.items.length === 0 ? (
+          <li className="px-3 py-6 text-center text-xs text-muted">No students match “{q}”.</li>
+        ) : (
+          data.items.map((s) => {
+            const standing = taken?.get(s.id);
+            return (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  disabled={!!standing}
+                  onClick={() => onPick(s)}
+                  className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <Avatar src={s.profile_picture_url} name={s.full_name} size={34} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{s.full_name}</span>
+                    <span className="block truncate text-xs text-muted">
+                      <span className="font-mono">{s.identifier}</span> · {s.level} level
+                    </span>
+                  </span>
+                  {standing && <span className="shrink-0 text-[11px] font-semibold text-muted">Standing for {standing}</span>}
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+      {data && data.total > data.items.length && (
+        <p className="border-t border-border px-3 py-2 text-[11px] text-muted">
+          Showing {data.items.length} of {data.total.toLocaleString()} — type to narrow it down.
+        </p>
+      )}
+    </div>
   );
 }

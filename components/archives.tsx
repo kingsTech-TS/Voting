@@ -3,15 +3,15 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ElectionTimes, StateBadge, TallyPositions, TallyStats, TallyUpdated } from "./election";
-import { IconArchive, IconArrowRight, IconCheck, IconMail, IconSearch, IconSend, IconTrophy, Logo } from "./icons";
+import { IconArchive, IconArrowRight, IconCheck, IconMail, IconRefresh, IconSearch, IconSend, IconTrophy, Logo } from "./icons";
 import { useDebounced } from "./staff";
 import { Alert, BackLink, Badge, Button, Dialog, EmptyState, ErrorState, Input, PageHeader, PageSpinner, Pagination, Skeleton } from "./ui";
 import { api } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
-import type { ArchivedElectionOut, ElectionOut, Page, ShareResultsOut, TallyOut } from "@/lib/api/types";
+import type { ArchivedElectionOut, ElectionOut, EmailConfigOut, Page, ResultsShareOut, ShareResultsOut, TallyOut } from "@/lib/api/types";
 import { formatDate, formatWAT } from "@/lib/time";
 
 type Base = "/admin/archives" | "/super-admin/archives";
@@ -247,13 +247,25 @@ function Timeline({ election: e }: { election: ElectionOut }) {
 
 // ---- share results by email -----------------------------------------------------------------------
 
+const PROVIDER_LABEL: Record<string, { label: string; tone: "success" | "info" | "warning" | "danger" | "neutral" }> = {
+  draft: { label: "Draft", tone: "neutral" },
+  scheduled: { label: "Scheduled", tone: "info" },
+  queued: { label: "Queued at Resend", tone: "info" },
+  sending: { label: "Resend is delivering", tone: "info" },
+  sent: { label: "Delivered by Resend", tone: "success" },
+  canceled: { label: "Cancelled", tone: "warning" },
+  failed: { label: "Failed at Resend", tone: "danger" },
+};
+const PROVIDER_DONE = new Set(["sent", "canceled", "failed"]);
+
 /** Email the final results to every registered student. Used in archives and on ended election pages. */
 export function ShareResultsCard({ election, tally, className }: { election: ElectionOut; tally?: TallyOut; className?: string }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  // Follow progress while the backend is sending.
+  // Follow progress while the backend is syncing / sending.
   const { data } = useQuery({
     queryKey: ["election", election.id],
     queryFn: () => api<ElectionOut>(`admin/elections/${election.id}`),
@@ -262,6 +274,8 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
   });
   const e = data ?? election;
   const share = e.results_share;
+  const config = useQuery({ queryKey: ["email-config"], queryFn: () => api<EmailConfigOut>("admin/email-config"), staleTime: 300_000 });
+  const broadcast = share ? share.method === "broadcast" : config.data?.results_delivery === "broadcast";
 
   // Needed for the email preview when the parent didn't load it.
   const ownTally = useQuery({
@@ -271,6 +285,27 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
   });
   const previewTally = tally ?? ownTally.data;
 
+  const checkProvider = async (quiet = false) => {
+    setChecking(true);
+    try {
+      queryClient.setQueryData(["election", e.id], await api<ElectionOut>(`admin/elections/${e.id}/share-results/refresh`, { method: "POST" }));
+    } catch (err) {
+      if (!quiet) toast.error(errorMessage(err));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  // After a broadcast is handed over, ask Resend how it's going every 15 s until it's done.
+  const waitingOnResend =
+    share?.method === "broadcast" && share.status === "sent" && !PROVIDER_DONE.has(share.provider_status ?? "");
+  useEffect(() => {
+    if (!waitingOnResend) return;
+    const id = setInterval(() => void checkProvider(true), 15_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitingOnResend, e.id]);
+
   if (e.state !== "ended") return null;
 
   const send = async () => {
@@ -279,7 +314,7 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
       const res = await api<ShareResultsOut>(`admin/elections/${e.id}/share-results`, { json: { resend: share?.status === "sent" } });
       queryClient.setQueryData(["election", e.id], res.election);
       void queryClient.invalidateQueries({ queryKey: ["archives"] });
-      toast.success(res.message);
+      toast.success(broadcast ? "Preparing the broadcast…" : res.message);
       setConfirming(false);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -288,7 +323,20 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
     }
   };
 
-  const progress = share && share.recipients ? Math.round(((share.sent + share.failed) / share.recipients) * 100) : 0;
+  const sent = share?.status === "sent";
+  const title = sent
+    ? broadcast
+      ? "Results broadcast sent"
+      : "Results emailed"
+    : share?.status === "sending"
+      ? broadcast
+        ? share.phase === "syncing"
+          ? "Preparing the broadcast…"
+          : "Sending the broadcast…"
+        : "Sending results…"
+      : share?.status === "failed"
+        ? "Results weren't sent"
+        : "Email the results";
 
   return (
     <section className={clsx("surface relative flex flex-col overflow-hidden p-6", className)}>
@@ -297,26 +345,41 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
         <span
           className={clsx(
             "flex size-12 shrink-0 items-center justify-center rounded-2xl",
-            share?.status === "sent" ? "bg-primary text-primary-fg" : "bg-primary-soft text-primary",
+            sent ? "bg-primary text-primary-fg" : share?.status === "failed" ? "bg-danger-soft text-danger" : "bg-primary-soft text-primary",
           )}
         >
-          {share?.status === "sent" ? <IconCheck size={22} strokeWidth={2.5} /> : <IconMail size={22} />}
+          {sent ? <IconCheck size={22} strokeWidth={2.5} /> : <IconMail size={22} />}
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-bold tracking-tight">
-            {share?.status === "sent" ? "Results emailed" : share?.status === "sending" ? "Sending results…" : "Email the results"}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-bold tracking-tight">{title}</h2>
+            {broadcast && <Badge tone="info">Resend broadcast</Badge>}
+          </div>
           <p className="mt-0.5 text-sm leading-relaxed text-muted">
-            {share?.status === "sent" ? (
-              <>
-                Delivered to <span className="num font-semibold text-foreground">{share.sent.toLocaleString()}</span> student
-                {share.sent === 1 ? "" : "s"} on {formatWAT(share.completed_at ?? share.requested_at)}
-                {share.requested_by_email ? ` by ${share.requested_by_email}` : ""}.
-              </>
+            {sent && share ? (
+              broadcast ? (
+                <>
+                  Sent as one broadcast to <span className="num font-semibold text-foreground">{share.recipients.toLocaleString()}</span>{" "}
+                  student{share.recipients === 1 ? "" : "s"} on {formatWAT(share.completed_at ?? share.requested_at)}
+                  {share.requested_by_email ? ` by ${share.requested_by_email}` : ""}. Students who unsubscribed are skipped.
+                </>
+              ) : (
+                <>
+                  Delivered to <span className="num font-semibold text-foreground">{share.sent.toLocaleString()}</span> student
+                  {share.sent === 1 ? "" : "s"} on {formatWAT(share.completed_at ?? share.requested_at)}
+                  {share.requested_by_email ? ` by ${share.requested_by_email}` : ""}.
+                </>
+              )
             ) : share?.status === "sending" ? (
-              "Students are receiving a branded summary of the winners and turnout."
+              broadcast
+                ? "Adding new students to the Resend list, then sending one broadcast to everyone."
+                : "Students are receiving a branded summary of the winners and turnout."
+            ) : share?.status === "failed" ? (
+              "Nothing was sent. Fix the problem below and try again."
             ) : e.auto_share_results ? (
               "Automatic sending is on — the summary goes out to every registered student within a minute of voting closing."
+            ) : broadcast ? (
+              "Send every registered student the winners and turnout as one Resend broadcast."
             ) : (
               "Send every registered student a summary of the winners and turnout, straight to their inbox."
             )}
@@ -324,20 +387,27 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
         </div>
       </div>
 
-      {share?.status === "sending" && (
-        <div className="relative mt-5">
-          <div className="flex justify-between text-xs text-muted">
-            <span className="num">
-              {(share.sent + share.failed).toLocaleString()} of {share.recipients.toLocaleString()}
-            </span>
-            <span className="num">{progress}%</span>
-          </div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-series-track">
-            <div className="h-full rounded-full bg-primary transition-[width] duration-700" style={{ width: `${Math.max(progress, 4)}%` }} />
-          </div>
+      {share?.status === "sending" && (broadcast ? <BroadcastProgress share={share} /> : <IndividualProgress share={share} />)}
+
+      {sent && broadcast && share && (
+        <div className="relative mt-4 flex flex-wrap items-center gap-2">
+          <Badge tone={PROVIDER_LABEL[share.provider_status ?? ""]?.tone ?? "neutral"} dot={!PROVIDER_DONE.has(share.provider_status ?? "") ? "pulse" : true}>
+            {PROVIDER_LABEL[share.provider_status ?? ""]?.label ?? share.provider_status ?? "Unknown"}
+          </Badge>
+          <Button variant="ghost" size="sm" onClick={() => void checkProvider()} loading={checking}>
+            <IconRefresh size={14} /> Check status
+          </Button>
         </div>
       )}
-      {share && share.failed > 0 && share.status !== "sending" && (
+
+      {share?.error && share.status !== "sending" && (
+        <Alert tone={share.status === "failed" ? "danger" : "warning"} className="relative mt-4" title={share.status === "failed" ? "Resend said" : undefined}>
+          {share.status === "failed"
+            ? share.error
+            : `${share.failed.toLocaleString()} student${share.failed === 1 ? "" : "s"} couldn't be added to the Resend list and won't get this email: ${share.error}`}
+        </Alert>
+      )}
+      {share && !broadcast && share.failed > 0 && share.status !== "sending" && (
         <Alert tone={share.status === "failed" ? "danger" : "warning"} className="relative mt-4">
           {share.failed.toLocaleString()} email{share.failed === 1 ? "" : "s"} could not be delivered.
           {share.status === "failed" && " Check the mail server settings and try again."}
@@ -346,9 +416,9 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
 
       <div className="relative mt-auto flex flex-wrap gap-2 pt-5">
         {share?.status !== "sending" && (
-          <Button variant={share?.status === "sent" ? "secondary" : "primary"} onClick={() => setConfirming(true)}>
+          <Button variant={sent ? "secondary" : "primary"} onClick={() => setConfirming(true)}>
             <IconSend size={15} />
-            {share?.status === "sent" ? "Send again" : share?.status === "failed" ? "Try again" : "Share results"}
+            {sent ? "Send again" : share?.status === "failed" ? "Try again" : "Share results"}
           </Button>
         )}
       </div>
@@ -359,20 +429,24 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
           wide
           onClose={() => setConfirming(false)}
           dismissible={!busy}
-          title={share?.status === "sent" ? "Send the results again?" : "Email the results to students?"}
-          description="Every registered student with an email address will receive this summary."
+          title={sent ? "Send the results again?" : "Email the results to students?"}
+          description={
+            broadcast
+              ? "Sent as one Resend broadcast to every registered student with an email. Anyone who unsubscribed won't receive it."
+              : "Every registered student with an email address will receive this summary."
+          }
           footer={
             <>
               <Button variant="secondary" onClick={() => setConfirming(false)} disabled={busy}>
                 Cancel
               </Button>
               <Button onClick={send} loading={busy}>
-                <IconSend size={15} /> {share?.status === "sent" ? "Send again" : "Send to students"}
+                <IconSend size={15} /> {sent ? "Send again" : broadcast ? "Send broadcast" : "Send to students"}
               </Button>
             </>
           }
         >
-          {share?.status === "sent" && (
+          {sent && share && (
             <Alert tone="warning" className="mb-4">
               Students already received these results on {formatWAT(share.requested_at)}. They will get a second copy.
             </Alert>
@@ -381,6 +455,69 @@ export function ShareResultsCard({ election, tally, className }: { election: Ele
         </Dialog>
       )}
     </section>
+  );
+}
+
+function ProgressBar({ value, label, right }: { value: number; label: string; right: string }) {
+  return (
+    <div>
+      <div className="flex justify-between text-xs text-muted">
+        <span className="num">{label}</span>
+        <span className="num">{right}</span>
+      </div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-series-track">
+        <div className="h-full rounded-full bg-primary transition-[width] duration-700" style={{ width: `${Math.max(value, 4)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function IndividualProgress({ share }: { share: ResultsShareOut }) {
+  const done = share.sent + share.failed;
+  const pct = share.recipients ? Math.round((done / share.recipients) * 100) : 0;
+  return (
+    <div className="relative mt-5">
+      <ProgressBar value={pct} label={`${done.toLocaleString()} of ${share.recipients.toLocaleString()}`} right={`${pct}%`} />
+    </div>
+  );
+}
+
+function BroadcastProgress({ share }: { share: ResultsShareOut }) {
+  const syncing = share.phase === "syncing";
+  const pct = share.sync_todo ? Math.round((share.synced / share.sync_todo) * 100) : syncing ? 0 : 100;
+  const steps = [
+    { key: "syncing", label: "Update the Resend student list" },
+    { key: "sending", label: "Send one broadcast" },
+  ];
+  return (
+    <div className="relative mt-5 flex flex-col gap-3">
+      <ol className="flex flex-col gap-2 text-sm">
+        {steps.map((step, i) => {
+          const done = !syncing && i === 0;
+          const active = share.phase === step.key;
+          return (
+            <li key={step.key} className="flex items-center gap-2.5">
+              <span
+                className={clsx(
+                  "flex size-5 items-center justify-center rounded-full text-[11px] font-bold",
+                  done ? "bg-primary text-primary-fg" : active ? "bg-primary-soft text-primary ring-2 ring-primary" : "bg-subtle text-muted",
+                )}
+              >
+                {done ? <IconCheck size={11} strokeWidth={3} /> : i + 1}
+              </span>
+              <span className={active || done ? "font-semibold" : "text-muted"}>{step.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {syncing && share.sync_todo > 0 && (
+        <ProgressBar
+          value={pct}
+          label={`${share.synced.toLocaleString()} of ${share.sync_todo.toLocaleString()} new or changed students added`}
+          right={`${pct}%`}
+        />
+      )}
+    </div>
   );
 }
 

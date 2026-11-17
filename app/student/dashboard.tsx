@@ -5,7 +5,7 @@ import { useState, type ReactNode } from "react";
 import { BallotPreview, Countdown, StateBadge, TallyPositions, TallyStats } from "@/components/election";
 import { BallotBoxScene } from "@/components/ballot-box-scene";
 import { ResultsWaitScene } from "@/components/results-wait-scene";
-import { IconCheck, IconRefresh } from "@/components/icons";
+import { IconAlert, IconCheck, IconRefresh } from "@/components/icons";
 import { Button, ErrorState, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import type { DashboardOut, ElectionOut, StudentProfileOut } from "@/lib/api/types";
@@ -77,7 +77,7 @@ export function StudentDashboard() {
     queryFn: () => api<DashboardOut>("students/me/dashboard"),
     refetchInterval: (q) => {
       const state = q.state.data?.state;
-      return state === "upcoming" || state === "ongoing" ? 60_000 : false;
+      return state === "upcoming" || state === "ongoing" || state === "not_paid" ? 60_000 : false;
     },
   });
 
@@ -128,6 +128,41 @@ export function StudentDashboard() {
           )}
         </ElectionHeading>
         <Ballot key={election.id} election={election} />
+      </>
+    );
+  }
+
+  if (data.state === "not_paid") {
+    return (
+      <>
+        <ElectionHeading election={election}>
+          {data.ends_at && (
+            <div className="mt-5">
+              <Countdown compact to={data.ends_at} label="Polls close in" onDone={onBoundary} />
+            </div>
+          )}
+        </ElectionHeading>
+        <section className="surface overflow-hidden">
+          <div className="flex items-start gap-4 bg-warning-soft px-6 py-6 sm:px-8">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-warning text-white">
+              <IconAlert size={20} />
+            </span>
+            <div>
+              <h2 className="font-display text-[24px] leading-tight">Payment not confirmed</h2>
+              <p className="mt-1.5 max-w-md text-sm leading-relaxed text-foreground/80">{data.message}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 sm:px-8">
+            <p className="text-xs text-muted">Already sorted it with an admin? Check again.</p>
+            <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+              <IconRefresh size={14} /> Check again
+            </Button>
+          </div>
+        </section>
+        <section className="mt-12">
+          <h2 className="mb-4 text-sm font-bold">On the ballot</h2>
+          <BallotPreview election={election} />
+        </section>
       </>
     );
   }
