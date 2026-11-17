@@ -207,3 +207,46 @@ export const IconChart = (p: IconProps) => (
     <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
   </svg>
 );
+
+export const IconArchive = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4" width="18" height="4.5" rx="1.2" />
+    <path d="M5 8.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5" />
+    <path d="M10 12.5h4" />
+  </svg>
+);
+
+export const IconMail = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <path d="m4 7 8 6 8-6" />
+  </svg>
+);
+
+export const IconSend = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M21 3 10.5 13.5" />
+    <path d="M21 3 14.5 21l-4-7.5L3 9.5z" />
+  </svg>
+);
+
+export const IconTrophy = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0z" />
+    <path d="M8 6H5a2.5 2.5 0 0 0 3 4M16 6h3a2.5 2.5 0 0 1-3 4" />
+    <path d="M12 13v3.5M8.5 20h7M9.5 20c0-2 1-3.5 2.5-3.5s2.5 1.5 2.5 3.5" />
+  </svg>
+);
+
+export const IconKey = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="8" cy="15" r="4" />
+    <path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2" />
+  </svg>
+);
+
+export const IconChevronDown = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);

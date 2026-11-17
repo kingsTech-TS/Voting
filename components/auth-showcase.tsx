@@ -3,10 +3,10 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { ColumnChart, Donut } from "./charts";
-import { IconCheck, IconClock, IconSearch } from "./icons";
+import { IconCheck, IconClock, IconKey, IconMail, IconSearch } from "./icons";
 import { Avatar } from "./ui";
 
-export type ShowcaseKind = "student-login" | "staff-login" | "register";
+export type ShowcaseKind = "student-login" | "staff-login" | "register" | "reset";
 
 /** Decorative sample cards for the auth pages' left panel (static data, hidden from assistive tech). */
 function Card({ children, className }: { children: ReactNode; className?: string }) {
@@ -200,12 +200,57 @@ function RegisteredChip() {
   );
 }
 
+// ---- password reset: the email that arrives --------------------------------------------------------
+
+function ResetMailCard() {
+  return (
+    <Card className="w-[300px]">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+          <IconMail size={19} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs text-muted">Campus Voting · just now</p>
+          <p className="truncate text-sm font-bold">Reset your password</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2">
+        <span className="h-2 w-[92%] rounded-full bg-subtle" />
+        <span className="h-2 w-[78%] rounded-full bg-subtle" />
+        <span className="h-2 w-[64%] rounded-full bg-subtle" />
+      </div>
+      <div className="mt-5 flex h-10 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-fg">
+        Reset my password
+      </div>
+      <p className="mt-3 text-center text-[11px] text-muted">Link expires in 30 minutes</p>
+    </Card>
+  );
+}
+
+function NewPasswordChip() {
+  return (
+    <Chip>
+      <span className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-fg">
+        <IconKey size={17} />
+      </span>
+      <div>
+        <p className="text-xs text-muted">New password</p>
+        <p className="num text-base font-extrabold tracking-[0.2em]">••••••••</p>
+      </div>
+      <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-primary-soft text-primary">
+        <IconCheck size={11} strokeWidth={3} />
+      </span>
+    </Chip>
+  );
+}
+
 // ---- layout ---------------------------------------------------------------------------------------
 
 const COPY: Record<ShowcaseKind, { title: string; body: string }> = {
   "student-login": { title: "Your ballot is waiting.", body: "Log in to see who's standing and cast your vote when polls open." },
   "staff-login": { title: "Run the election.", body: "Manage students, publish ballots and watch the count come in live." },
   register: { title: "On the list? You're in.", body: "Enter your number, confirm it's you, and choose a password." },
+  reset: { title: "Locked out? No problem.", body: "We'll email you a secure, one-time link to choose a new password." },
 };
 
 export function AuthShowcase({ kind }: { kind: ShowcaseKind }) {
@@ -240,6 +285,16 @@ export function AuthShowcase({ kind }: { kind: ShowcaseKind }) {
             </div>
             <div className="absolute bottom-8 right-0 z-10 rotate-[5deg]">
               <div className="animate-float-late"><RegisteredChip /></div>
+            </div>
+          </>
+        )}
+        {kind === "reset" && (
+          <>
+            <div className="absolute left-2 top-6 -rotate-[4deg]">
+              <div className="animate-float"><ResetMailCard /></div>
+            </div>
+            <div className="absolute bottom-10 right-0 z-10 rotate-[4deg]">
+              <div className="animate-float-late"><NewPasswordChip /></div>
             </div>
           </>
         )}

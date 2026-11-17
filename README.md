@@ -28,7 +28,7 @@ This repo is the **Next.js frontend**. The API lives in the sibling repo
 
 ### Students
 
-- Register with a Matric number (9 digits) or Registration number (12 digits + 2 letters).
+- Register with a Matric number (9 or 10 digits) or Registration number (12 digits + 2 letters).
   Their name and level appear as they type, so they can confirm it's them.
 - A profile photo is required on first sign-in.
 - The dashboard always shows where things stand:

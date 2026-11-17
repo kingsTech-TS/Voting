@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { ShareResultsCard } from "@/components/archives";
 import { Countdown, ElectionTimes, ImagePicker, StateBadge } from "@/components/election";
 import { ElectionForm, electionToForm } from "@/components/election-form";
 import { useElection } from "@/components/staff";
@@ -129,9 +130,16 @@ export function ElectionBuilder({ id }: { id: string }) {
         </Alert>
       )}
       {election.state === "ended" && (
-        <Alert tone="info" title="This election has ended">
-          It can no longer be edited.
-        </Alert>
+        <>
+          <Alert tone="info" title="This election has ended">
+            It can no longer be edited. It is also kept in the{" "}
+            <Link href={`/admin/archives/${id}`} className="font-semibold underline">
+              archives
+            </Link>
+            .
+          </Alert>
+          <ShareResultsCard election={election} />
+        </>
       )}
       {election.state === "upcoming" && (
         <section className="flex flex-col gap-6 surface p-6 sm:flex-row sm:items-end sm:justify-between">
@@ -168,17 +176,18 @@ export function ElectionBuilder({ id }: { id: string }) {
 
       <Panel title="Details" actions={!editable && <IconLock size={15} className="text-muted" />}>
         <ElectionForm
-          key={election.id + election.start_time + election.end_time + election.title}
+          key={election.id + election.start_time + election.end_time + election.title + election.auto_share_results}
           initial={electionToForm(election)}
           submitLabel="Save details"
           disabled={!editable}
           onSubmit={async (v) => {
             const before = electionToForm(election);
-            const changes: Record<string, string | null> = {};
+            const changes: Record<string, string | boolean | null> = {};
             if (v.title.trim() !== before.title) changes.title = v.title.trim();
             if (v.description.trim() !== before.description) changes.description = v.description.trim() || null;
             if (v.start_time !== before.start_time) changes.start_time = toAwareISO(v.start_time);
             if (v.end_time !== before.end_time) changes.end_time = toAwareISO(v.end_time);
+            if (v.auto_share_results !== before.auto_share_results) changes.auto_share_results = v.auto_share_results;
             if (Object.keys(changes).length === 0) {
               toast.message("Nothing to save.");
               return;

@@ -6,11 +6,13 @@ import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, logout } from "@/lib/api/client";
-import type { StaffOut, StudentProfileOut } from "@/lib/api/types";
+import type { SessionStateOut, StaffOut, StudentProfileOut } from "@/lib/api/types";
 import { AuthShowcase, type ShowcaseKind } from "./auth-showcase";
 import {
   IconActivity,
+  IconArchive,
   IconBallot,
+  IconCalendar,
   IconInbox,
   IconLogout,
   IconMenu,
@@ -36,12 +38,15 @@ const NAV: Record<"admin" | "super_admin", NavItem[]> = {
   admin: [
     { href: "/admin", label: "Overview", icon: IconOverview, exact: true },
     { href: "/admin/elections", label: "Elections", icon: IconBallot },
+    { href: "/admin/archives", label: "Archives", icon: IconArchive },
     { href: "/admin/students", label: "Students", icon: IconUsers },
     { href: "/admin/messages", label: "Messages", icon: IconInbox, badge: "unread" },
   ],
   super_admin: [
     { href: "/super-admin", label: "Overview", icon: IconOverview, exact: true },
     { href: "/super-admin/elections", label: "Elections", icon: IconBallot },
+    { href: "/super-admin/archives", label: "Archives", icon: IconArchive },
+    { href: "/super-admin/session", label: "Session", icon: IconCalendar },
     { href: "/super-admin/admins", label: "Admins", icon: IconShield },
     { href: "/super-admin/students", label: "Students", icon: IconUsers },
     { href: "/super-admin/audit-logs", label: "Activity log", icon: IconActivity },
@@ -114,6 +119,17 @@ function StaffIdentity() {
   );
 }
 
+function SessionChip({ href }: { href?: string }) {
+  const { data } = useQuery({ queryKey: ["session"], queryFn: () => api<SessionStateOut>("admin/session"), staleTime: 300_000 });
+  if (!data?.current) return null;
+  const chip = (
+    <span className="num rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-bold text-primary" title="Current academic session">
+      {data.current}
+    </span>
+  );
+  return href ? <Link href={href}>{chip}</Link> : chip;
+}
+
 function LogoutButton({ withLabel }: { withLabel?: boolean }) {
   return (
     <button
@@ -156,7 +172,10 @@ export function StaffShell({ role, children }: { role: "admin" | "super_admin"; 
         <div className="px-2 pt-1">
           <Brand href={home} />
         </div>
-        <p className="mb-2 mt-8 px-3.5 text-xs font-medium text-muted">{role === "admin" ? "Admin" : "Super admin"}</p>
+        <div className="mb-2 mt-8 flex items-center justify-between gap-2 px-3.5">
+          <p className="text-xs font-medium text-muted">{role === "admin" ? "Admin" : "Super admin"}</p>
+          <SessionChip href={role === "super_admin" ? "/super-admin/session" : undefined} />
+        </div>
         {nav}
         <div className="mt-auto flex flex-col gap-3">
           <ThemeToggle className="self-start" />

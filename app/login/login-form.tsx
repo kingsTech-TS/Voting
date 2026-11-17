@@ -69,19 +69,26 @@ export function StudentLoginForm() {
           error={errors.identifier}
           hint={IDENTIFIER_HINT}
         />
-        <TextField
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
-        />
+        <div className="flex flex-col gap-1.5">
+          <TextField
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            error={errors.password}
+          />
+          <Link
+            href={identifier ? `/forgot-password?login=${encodeURIComponent(normalizeIdentifier(identifier))}` : "/forgot-password"}
+            className="self-end text-[13px] font-medium text-primary hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <Button type="submit" size="lg" loading={loading} disabled={blocked}>
           Log in
         </Button>
-        <p className="text-center text-xs text-muted">Forgot your password? Contact your admin.</p>
       </form>
     </AuthLayout>
   );

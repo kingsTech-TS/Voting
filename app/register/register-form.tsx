@@ -23,6 +23,7 @@ export function RegisterForm() {
   const [identifier, setIdentifier] = useState("");
   // The last lookup result, tagged with the identifier it belongs to.
   const [result, setResult] = useState<{ for: string; lookup: Lookup }>({ for: "", lookup: { status: "idle" } });
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -66,19 +67,20 @@ export function RegisterForm() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const result = check(registerSchema, { identifier, password, confirm_password: confirm });
+    const result = check(registerSchema, { identifier, email, password, confirm_password: confirm });
     setErrors(result.errors ?? {});
     if (!result.data || lookup.status !== "found") return;
     setLoading(true);
     setError(null);
     try {
       const res = await api<MessageOut>("auth/student/register", {
-        json: { identifier: normalized, password, confirm_password: confirm },
+        json: { identifier: normalized, email: email.trim().toLowerCase(), password, confirm_password: confirm },
       });
       toast.success(res.message);
       router.push(`/login?identifier=${encodeURIComponent(normalized)}`);
     } catch (err) {
-      setError(err);
+      if (err instanceof ApiError && err.code === "EMAIL_IN_USE") setErrors({ email: err.message });
+      else setError(err);
       setLoading(false);
     }
   };
@@ -149,9 +151,23 @@ export function RegisterForm() {
         {lookup.status === "found" && (
           <>
             <TextField
+              label="Email address"
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              inputMode="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              error={errors.email}
+              hint="We'll send password reset links and election results here."
+            />
+            <TextField
               label="Password"
               name="password"
               type="password"
+              required
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -162,6 +178,7 @@ export function RegisterForm() {
               label="Confirm password"
               name="confirm_password"
               type="password"
+              required
               autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}

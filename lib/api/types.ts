@@ -72,6 +72,7 @@ export interface StudentOut {
   id_type: IdType;
   full_name: string;
   level: string;
+  email: string | null;
   is_registered: boolean;
   profile_picture_url: string | null;
   created_at: string;
@@ -84,8 +85,36 @@ export interface StudentProfileOut {
   id_type: IdType;
   full_name: string;
   level: string;
+  email: string | null;
   profile_picture_url: string | null;
   onboarding_required: "profile_picture" | null;
+}
+
+export type ImportFormat = "csv" | "xlsx" | "docx" | "pdf";
+export type ImportRowStatus = "new" | "exists" | "duplicate" | "invalid";
+
+export interface ImportPreviewRow {
+  line: number;
+  identifier: string;
+  full_name: string;
+  level: string | null;
+  status: ImportRowStatus;
+  note: string | null;
+}
+
+export interface ImportPreviewOut {
+  format: ImportFormat;
+  filename: string;
+  rows: ImportPreviewRow[];
+  counts: Record<ImportRowStatus, number>;
+  levels_in_file: string[];
+  /** Every readable student in the file is already in the system. */
+  already_imported: boolean;
+}
+
+export interface StudentBulkDeleteOut {
+  deleted: number;
+  blocked: { id: string; identifier: string; full_name: string; reason: string }[];
 }
 
 export interface BulkImportOut {
@@ -122,6 +151,36 @@ export interface ElectionOut {
   published_at: string | null;
   positions: PositionOut[];
   created_at: string;
+  /** When voting actually closed (stop time or end time); null until the election has ended. */
+  closed_at: string | null;
+  /** Email the results summary to students automatically when voting ends. */
+  auto_share_results: boolean;
+  results_share: ResultsShareOut | null;
+}
+
+export interface ResultsShareOut {
+  status: "sending" | "sent" | "failed";
+  requested_at: string;
+  requested_by_email: string | null;
+  recipients: number;
+  sent: number;
+  failed: number;
+  completed_at: string | null;
+}
+
+export interface ShareResultsOut {
+  code: string;
+  message: string;
+  recipients: number;
+  election: ElectionOut;
+}
+
+export interface ArchivedElectionOut {
+  election: ElectionOut;
+  total_votes: number;
+  eligible_voters: number;
+  turnout_percentage: number;
+  winners: { position: string; names: string[]; votes: number }[];
 }
 
 export interface CandidateResult extends CandidateOut {
@@ -196,5 +255,41 @@ export interface AuditLogOut {
   target_id: string | null;
   metadata: Record<string, unknown>;
   ip: string | null;
+  user_agent: string | null;
   created_at: string;
+}
+
+export interface ResetTokenCheckOut {
+  valid: boolean;
+  full_name: string | null;
+  email_hint: string | null;
+}
+
+export interface PasswordResetSentOut extends MessageOut {
+  email_hint: string;
+}
+
+export interface PasswordResetOut extends MessageOut {
+  identifier: string;
+}
+
+export interface LevelCount {
+  level: string;
+  count: number;
+}
+
+export interface SessionStateOut {
+  current: string | null;
+  next: string | null;
+  started_at: string | null;
+  levels: LevelCount[];
+  other_levels: LevelCount[];
+  total_students: number;
+  history: { session: string; started_at: string; started_by_email: string | null; promoted: number; graduated_deleted: number }[];
+}
+
+export interface SessionAdvanceOut {
+  state: SessionStateOut;
+  promoted: number;
+  graduated_deleted: number;
 }

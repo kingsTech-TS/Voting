@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { ShareResultsCard } from "@/components/archives";
 import { BallotPreview, Countdown, ElectionTimes, StateBadge } from "@/components/election";
 import { LiveTally, useElection } from "@/components/staff";
 import { Alert, BackLink, Button, Dialog, ErrorState, PageSpinner, TextAreaField, TextField } from "@/components/ui";
@@ -50,6 +51,7 @@ export function SuperAdminElection({ id }: { id: string }) {
           {election.positions.length ? <BallotPreview election={election} /> : <p className="text-sm text-muted">No positions yet.</p>}
         </section>
       )}
+      {election.state === "ended" && <ShareResultsCard election={election} />}
       {(election.state === "ongoing" || election.state === "ended") && <LiveTally election={election} onEnded={onEnded} />}
 
       {stopping && <StopDialog election={election} onClose={() => setStopping(false)} />}

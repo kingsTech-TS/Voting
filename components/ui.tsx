@@ -66,9 +66,11 @@ interface FieldProps {
   hint?: ReactNode;
   children: (id: string, describedBy: string | undefined) => ReactNode;
   className?: string;
+  /** Shows a red asterisk after the label. */
+  required?: boolean;
 }
 
-export function Field({ label, error, hint, children, className }: FieldProps) {
+export function Field({ label, error, hint, children, className, required }: FieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errId = `${id}-err`;
@@ -77,6 +79,14 @@ export function Field({ label, error, hint, children, className }: FieldProps) {
     <div className={clsx("flex flex-col gap-1.5", className)}>
       <label htmlFor={id} className="text-[13px] font-medium text-foreground">
         {label}
+        {required && (
+          <>
+            <span aria-hidden="true" className="ml-0.5 text-danger">
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </>
+        )}
       </label>
       {children(id, describedBy)}
       {hint && !error && (
@@ -102,7 +112,7 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export function TextField({ label, error, hint, className, ...rest }: TextFieldProps) {
   return (
-    <Field label={label} error={error} hint={hint} className={className}>
+    <Field label={label} error={error} hint={hint} className={className} required={rest.required}>
       {(id, describedBy) => (
         <input
           id={id}

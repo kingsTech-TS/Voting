@@ -11,7 +11,7 @@ const AREAS: { prefix: string; role: "student" | "admin" | "super_admin"; login:
   { prefix: "/super-admin", role: "super_admin", login: "/staff/login" },
   { prefix: "/admin", role: "admin", login: "/staff/login" },
 ];
-const GUEST_ONLY = ["/login", "/register", "/staff/login"];
+const GUEST_ONLY = ["/login", "/register", "/staff/login", "/forgot-password"];
 
 function under(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);

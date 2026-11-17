@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ElectionForm } from "@/components/election-form";
+import { EMPTY_ELECTION_FORM, ElectionForm } from "@/components/election-form";
 import { Card, PageHeader } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import type { ElectionOut } from "@/lib/api/types";
@@ -28,7 +28,7 @@ export function NewElection() {
       />
       <Card className="max-w-2xl">
         <ElectionForm
-          initial={{ title: "", description: "", start_time: "", end_time: "" }}
+          initial={EMPTY_ELECTION_FORM}
           submitLabel="Create draft"
           onSubmit={async (v) => {
             const e = await api<ElectionOut>("admin/elections", {
@@ -37,6 +37,7 @@ export function NewElection() {
                 description: v.description.trim() || null,
                 start_time: toAwareISO(v.start_time),
                 end_time: toAwareISO(v.end_time),
+                auto_share_results: v.auto_share_results,
               },
             });
             queryClient.setQueryData(["election", e.id], e);

@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
@@ -10,7 +11,7 @@ import { Alert, Avatar, Badge, Button, EmptyState, ErrorState, Input, PageSpinne
 import { api } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
 import { useLiveTally, type LiveStatus } from "@/lib/api/use-live-tally";
-import type { ElectionOut, Page, StudentOut, TallyOut } from "@/lib/api/types";
+import type { ElectionOut, Page, SessionStateOut, StudentOut, TallyOut } from "@/lib/api/types";
 import { formatDate, formatWAT } from "@/lib/time";
 
 export function useDebounced<T>(value: T, ms = 350): T {
@@ -24,31 +25,63 @@ export function useDebounced<T>(value: T, ms = 350): T {
 
 // ---- students table -------------------------------------------------------------------------------
 
+export type StudentSort = "name_asc" | "name_desc" | "level" | "newest" | "oldest";
+
 export interface StudentFilters {
   page: number;
   search: string;
   level: string;
   registered: "" | "true" | "false";
+  sort: StudentSort;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
+const EMPTY_FILTERS: StudentFilters = { page: 1, search: "", level: "", registered: "", sort: "name_asc" };
+
+const SORTS: { value: StudentSort; label: string }[] = [
+  { value: "name_asc", label: "Name A–Z" },
+  { value: "name_desc", label: "Name Z–A" },
+  { value: "level", label: "Level" },
+  { value: "newest", label: "Newest added" },
+  { value: "oldest", label: "Oldest added" },
+];
+
+const REGISTRATION: { value: StudentFilters["registered"]; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "true", label: "Registered" },
+  { value: "false", label: "Not registered" },
+];
 
 /** Shared by admin (with row actions) and super admin (read-only). */
 export function StudentsTable({
   endpoint,
   actions,
   toolbar,
+  bulkActions,
 }: {
   endpoint: "admin/students" | "super-admin/students";
   actions?: (s: StudentOut) => ReactNode;
   toolbar?: ReactNode;
+  /** Enables tick boxes; renders the bar shown while students are selected. */
+  bulkActions?: (selected: StudentOut[], clear: () => void) => ReactNode;
 }) {
-  const [filters, setFilters] = useState<StudentFilters>({ page: 1, search: "", level: "", registered: "" });
+  const [filters, setFilters] = useState<StudentFilters>(EMPTY_FILTERS);
+  const session = useQuery({ queryKey: ["session"], queryFn: () => api<SessionStateOut>("admin/session"), staleTime: 60_000 });
+  const levelOptions = [...(session.data?.levels ?? []), ...(session.data?.other_levels ?? [])];
+  const [selected, setSelected] = useState<Map<string, StudentOut>>(new Map());
+  const clearSelection = () => setSelected(new Map());
+  const toggle = (s: StudentOut) =>
+    setSelected((m) => {
+      const next = new Map(m);
+      if (next.has(s.id)) next.delete(s.id);
+      else next.set(s.id, s);
+      return next;
+    });
   const search = useDebounced(filters.search);
-  const level = useDebounced(filters.level);
+  const level = filters.level;
 
   const { data, error, isPending, refetch, isFetching } = useQuery({
-    queryKey: ["students", endpoint, filters.page, search, level, filters.registered],
+    queryKey: ["students", endpoint, filters.page, search, level, filters.registered, filters.sort],
     queryFn: () =>
       api<Page<StudentOut>>(endpoint, {
         query: {
@@ -57,46 +90,96 @@ export function StudentsTable({
           search: search.trim() || undefined,
           level: level.trim() || undefined,
           is_registered: filters.registered || undefined,
+          sort: filters.sort,
         },
       }),
     placeholderData: keepPreviousData,
   });
 
   const update = (patch: Partial<StudentFilters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
+  const filtered = Boolean(filters.search || filters.level || filters.registered || filters.sort !== "name_asc");
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative sm:w-72">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="relative lg:w-72">
           <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <Input
             type="search"
-            placeholder="Search name or Matric/Reg no."
+            placeholder="Search name, Matric/Reg no. or email"
             aria-label="Search students"
             value={filters.search}
             onChange={(e) => update({ search: e.target.value })}
             className="pl-9"
           />
         </div>
-        <Input
-          placeholder="Level (e.g. 300)"
-          aria-label="Filter by level"
-          value={filters.level}
-          onChange={(e) => update({ level: e.target.value })}
-          className="sm:w-40"
-        />
-        <Select
-          aria-label="Filter by registration"
-          value={filters.registered}
-          onChange={(e) => update({ registered: e.target.value as StudentFilters["registered"] })}
-          className="sm:w-48"
-        >
-          <option value="">All students</option>
-          <option value="true">Registered</option>
-          <option value="false">Not registered</option>
-        </Select>
-        <div className="flex gap-2 sm:ml-auto">{toolbar}</div>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Select aria-label="Sort students" value={filters.sort} onChange={(e) => update({ sort: e.target.value as StudentSort })} className="sm:w-40">
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+          <Select aria-label="Filter by level" value={filters.level} onChange={(e) => update({ level: e.target.value })} className="sm:w-40">
+            <option value="">All levels</option>
+            {levelOptions.map((l) => (
+              <option key={l.level} value={l.level}>
+                {/^\d+$/.test(l.level) ? `${l.level} level` : l.level} ({l.count.toLocaleString()})
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex gap-2 lg:ml-auto">{toolbar}</div>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-xl bg-card p-1 text-[13px] font-semibold shadow-[var(--shadow-card)] ring-1 ring-card-border" role="radiogroup" aria-label="Registration status">
+          {REGISTRATION.map((r) => {
+            const on = filters.registered === r.value;
+            return (
+              <button
+                key={r.label}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => update({ registered: r.value })}
+                className={clsx(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-primary",
+                  on ? "bg-primary text-primary-fg" : "text-muted hover:bg-subtle hover:text-foreground",
+                )}
+              >
+                {r.value === "true" && <span className={clsx("size-1.5 rounded-full", on ? "bg-primary-fg" : "bg-primary")} aria-hidden="true" />}
+                {r.value === "false" && <span className={clsx("size-1.5 rounded-full", on ? "bg-primary-fg" : "bg-danger")} aria-hidden="true" />}
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+        {data && (
+          <p className="num text-[13px] text-muted">
+            <span className="font-bold text-foreground">{data.total.toLocaleString()}</span> student{data.total === 1 ? "" : "s"}
+            {filters.level && <> in {/^\d+$/.test(filters.level) ? `${filters.level} level` : filters.level}</>}
+          </p>
+        )}
+        {filtered && (
+          <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}>
+            Clear filters
+          </Button>
+        )}
+      </div>
+
+      {bulkActions && selected.size > 0 && (
+        <div className="animate-fade-in surface sticky top-20 z-20 flex flex-wrap items-center justify-between gap-3 !rounded-2xl px-4 py-3 lg:top-4">
+          <p className="text-sm">
+            <span className="num font-extrabold">{selected.size.toLocaleString()}</span> selected
+            <button type="button" onClick={clearSelection} className="ml-3 text-[13px] font-semibold text-muted hover:text-foreground">
+              Clear
+            </button>
+          </p>
+          <div className="flex gap-2">{bulkActions([...selected.values()], clearSelection)}</div>
+        </div>
+      )}
 
       {isPending ? (
         <PageSpinner />
@@ -104,13 +187,33 @@ export function StudentsTable({
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : data.items.length === 0 ? (
         <EmptyState title="No students found">
-          {filters.search || filters.level || filters.registered ? "Try different filters." : "Students added by an admin will appear here."}
+          {filtered ? "Try different filters." : "Students added by an admin will appear here."}
         </EmptyState>
       ) : (
         <div className={isFetching ? "opacity-70 transition-opacity" : undefined}>
           <Table>
             <thead>
               <tr>
+                {bulkActions && (
+                  <Th className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all students on this page"
+                      className="size-4 accent-[var(--primary)]"
+                      checked={data.items.length > 0 && data.items.every((s) => selected.has(s.id))}
+                      onChange={(e) =>
+                        setSelected((m) => {
+                          const next = new Map(m);
+                          for (const s of data.items) {
+                            if (e.target.checked) next.set(s.id, s);
+                            else next.delete(s.id);
+                          }
+                          return next;
+                        })
+                      }
+                    />
+                  </Th>
+                )}
                 <Th>Student</Th>
                 <Th>Matric / Reg no.</Th>
                 <Th>Level</Th>
@@ -121,11 +224,25 @@ export function StudentsTable({
             </thead>
             <tbody>
               {data.items.map((s) => (
-                <tr key={s.id}>
+                <tr key={s.id} className={selected.has(s.id) ? "bg-primary-soft/50" : undefined}>
+                  {bulkActions && (
+                    <Td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${s.full_name}`}
+                        className="size-4 accent-[var(--primary)]"
+                        checked={selected.has(s.id)}
+                        onChange={() => toggle(s)}
+                      />
+                    </Td>
+                  )}
                   <Td>
                     <div className="flex items-center gap-3">
                       <Avatar src={s.profile_picture_url} name={s.full_name} size={32} />
-                      <span className="font-medium">{s.full_name}</span>
+                      <span className="min-w-0">
+                        <span className="block font-medium">{s.full_name}</span>
+                        {s.email && <span className="block truncate text-xs text-muted">{s.email}</span>}
+                      </span>
                     </div>
                   </Td>
                   <Td>

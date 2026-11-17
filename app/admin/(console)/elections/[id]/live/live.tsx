@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { ShareResultsCard } from "@/components/archives";
 import { ElectionTimes, StateBadge } from "@/components/election";
 import { LiveTally, useElection } from "@/components/staff";
 import { BackLink, ErrorState, PageSpinner } from "@/components/ui";
@@ -24,6 +25,7 @@ export function AdminLive({ id }: { id: string }) {
           <ElectionTimes election={election} />
         </div>
       </div>
+      {election.state === "ended" && <ShareResultsCard election={election} />}
       <LiveTally election={election} onEnded={onEnded} />
     </div>
   );

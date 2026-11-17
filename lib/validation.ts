@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-export const MATRIC_RE = /^\d{9}$/;
+export const MATRIC_RE = /^\d{9,10}$/;
 export const REG_RE = /^\d{12}[A-Za-z]{2}$/;
 export const IDENTIFIER_HINT =
-  "Matric number: 9 digits (e.g. 220703012). Registration number: 12 digits + 2 letters (e.g. 202650372846LA).";
+  "Matric number: 9 or 10 digits (e.g. 220703012 or 1807003004). Registration number: 12 digits + 2 letters (e.g. 202650372846LA).";
 
 /** Same normalisation as the backend: strip spaces, upper-case reg numbers. */
 export function normalizeIdentifier(raw: string): string {
@@ -36,7 +36,26 @@ export const password = z
 export const email = z.string().trim().toLowerCase().email("Enter a valid email address.");
 
 export const registerSchema = z
-  .object({ identifier, password, confirm_password: z.string() })
+  .object({
+    identifier,
+    email: z.string().trim().min(1, "Email address is required.").pipe(email),
+    password,
+    confirm_password: z.string(),
+  })
+  .refine((d) => d.password === d.confirm_password, { message: "Passwords do not match.", path: ["confirm_password"] });
+
+export const forgotPasswordSchema = z.object({
+  login: z
+    .string()
+    .trim()
+    .min(1, "Enter your Matric/Reg number or email address.")
+    .refine((v) => (v.includes("@") ? z.string().email().safeParse(v).success : identifierType(v) !== null), {
+      message: "Enter a valid Matric/Reg number or email address.",
+    }),
+});
+
+export const resetPasswordSchema = z
+  .object({ password, confirm_password: z.string() })
   .refine((d) => d.password === d.confirm_password, { message: "Passwords do not match.", path: ["confirm_password"] });
 
 export const studentLoginSchema = z.object({ identifier, password: z.string().min(1, "Enter your password.") });
@@ -63,6 +82,7 @@ export const studentCreateSchema = z.object({
 });
 
 export const studentUpdateSchema = z.object({
+  identifier,
   full_name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(120),
   level: z.string().trim().min(1, "Level is required.").max(20),
 });
@@ -116,6 +136,8 @@ export function check<T>(schema: z.ZodType<T>, values: unknown): { data: T; erro
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const MAX_CSV_BYTES = 2 * 1024 * 1024;
+export const MAX_DOC_BYTES = 10 * 1024 * 1024;
+export const LEVEL_RE = /^[A-Za-z0-9 ./-]{1,20}$/;
 
 export function checkImage(file: File | null | undefined): string | null {
   if (!file) return "Choose an image.";
