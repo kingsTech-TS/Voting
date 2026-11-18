@@ -1,14 +1,25 @@
 "use client";
 
 import clsx from "clsx";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import type { CandidateOut, ElectionOut, ElectionState, PositionResult, TallyOut } from "@/lib/api/types";
+import { api } from "@/lib/api/client";
+import type {
+  CandidateOut,
+  CandidateResult,
+  CandidateVoterOut,
+  ElectionOut,
+  ElectionState,
+  Page,
+  PositionResult,
+  TallyOut,
+} from "@/lib/api/types";
 import { Donut, LegendStat, withSeriesColors } from "./charts";
 import { formatClock, formatWAT, serverNow } from "@/lib/time";
 import { checkImage } from "@/lib/validation";
 import { BlobImage } from "./blob-image";
-import { IconImage } from "./icons";
-import { Avatar, Badge, Button } from "./ui";
+import { IconChevronDown, IconImage, IconUsers } from "./icons";
+import { Avatar, Badge, Button, Dialog, ErrorState, PageSpinner, Pagination, Table, Td, Th } from "./ui";
 
 // ---- state badge ----------------------------------------------------------------------------------
 
@@ -230,8 +241,20 @@ export function TallyStats({ tally }: { tally: TallyOut }) {
   );
 }
 
-function PositionResultCard({ position, index, final }: { position: PositionResult; index: number; final?: boolean }) {
+function PositionResultCard({
+  position,
+  index,
+  final,
+  electionId,
+}: {
+  position: PositionResult;
+  index: number;
+  final?: boolean;
+  electionId?: string;
+}) {
   const [active, setActive] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<CandidateResult | null>(null);
   const segments = withSeriesColors(position.candidates);
   const colorOf = new Map(segments.map((s) => [s.key, s.color]));
   const total = position.candidates.reduce((n, c) => n + c.votes, 0);
@@ -288,38 +311,200 @@ function PositionResultCard({ position, index, final }: { position: PositionResu
         {position.candidates.map((c, i) => {
           const winner = final && position.winner_ids.includes(c.id);
           const color = colorOf.get(c.id) ?? "var(--muted)";
+          const open = expanded === c.id;
           return (
             <li
               key={c.id}
               onMouseEnter={() => setActive(colorOf.has(c.id) ? c.id : "__other")}
               onMouseLeave={() => setActive(null)}
               className={clsx(
-                "-mx-2 flex items-center gap-3 rounded-2xl px-2 py-2 transition-colors",
-                (active === c.id || (active === "__other" && !colorOf.has(c.id))) && "bg-subtle",
+                "-mx-2 rounded-2xl px-2 transition-colors",
+                (open || active === c.id || (active === "__other" && !colorOf.has(c.id))) && "bg-subtle",
               )}
             >
-              <span className="num w-4 text-xs text-muted">{i + 1}</span>
-              <Avatar src={c.image_url} name={c.full_name} size={34} />
-              <span className="min-w-0 flex-1">
-                <span className={clsx("block truncate text-sm", winner ? "font-bold" : "font-semibold")}>{c.full_name}</span>
-                {winner && <span className="text-xs font-semibold text-primary">{tie ? "Joint winner" : "Winner"}</span>}
-              </span>
-              <span className="num text-right text-sm font-bold">{c.votes.toLocaleString()}</span>
-              <span className="num w-12 text-right text-xs text-muted">{c.percentage.toFixed(1)}%</span>
-              <span className="size-3 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => setExpanded(open ? null : c.id)}
+                aria-expanded={open}
+                aria-label={`${c.full_name}: ${c.votes} votes. ${open ? "Hide" : "Show"} votes by level`}
+                className="flex w-full items-center gap-3 py-2 text-left"
+              >
+                <span className="num w-4 text-xs text-muted">{i + 1}</span>
+                <Avatar src={c.image_url} name={c.full_name} size={34} />
+                <span className="min-w-0 flex-1">
+                  <span className={clsx("block truncate text-sm", winner ? "font-bold" : "font-semibold")}>{c.full_name}</span>
+                  {winner && <span className="text-xs font-semibold text-primary">{tie ? "Joint winner" : "Winner"}</span>}
+                </span>
+                <span className="num text-right text-sm font-bold">{c.votes.toLocaleString()}</span>
+                <span className="num w-12 text-right text-xs text-muted">{c.percentage.toFixed(1)}%</span>
+                <span className="size-3 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
+                <IconChevronDown size={14} className={clsx("shrink-0 text-muted transition-transform", open && "rotate-180")} />
+              </button>
+              {open && (
+                <LevelBreakdown
+                  candidate={c}
+                  color={color}
+                  onViewVoters={electionId ? () => setViewing(c) : undefined}
+                />
+              )}
             </li>
           );
         })}
       </ol>
+      {electionId && viewing && (
+        <CandidateVotersDialog
+          electionId={electionId}
+          positionId={position.id}
+          candidate={viewing}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </section>
   );
 }
 
-export function TallyPositions({ tally, final }: { tally: TallyOut; final?: boolean }) {
+function levelLabel(level: string) {
+  return /^\d+$/.test(level) ? `${level} level` : level;
+}
+
+/** How many of a candidate's votes came from each level. */
+function LevelBreakdown({ candidate, color, onViewVoters }: { candidate: CandidateResult; color: string; onViewVoters?: () => void }) {
+  const levels = candidate.level_breakdown ?? [];
+  const max = Math.max(1, ...levels.map((l) => l.votes));
+  return (
+    <div className="animate-fade-in pb-3 pl-7 pr-1">
+      <p className="mb-2 text-xs font-semibold text-muted">Votes by level</p>
+      {levels.length === 0 ? (
+        <p className="text-xs text-muted">No votes yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {levels.map((l) => {
+            const share = candidate.votes ? Math.round((l.votes / candidate.votes) * 100) : 0;
+            return (
+              <li key={l.level} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3 text-xs">
+                <span className="truncate font-medium">{levelLabel(l.level)}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-series-track" aria-hidden="true">
+                  <span className="block h-full rounded-full" style={{ width: `${(l.votes / max) * 100}%`, background: color }} />
+                </span>
+                <span className="num text-right">
+                  <span className="font-bold">{l.votes.toLocaleString()}</span>
+                  <span className="text-muted"> · {share}%</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {onViewVoters && candidate.votes > 0 && (
+        <Button variant="secondary" size="sm" className="mt-3" onClick={onViewVoters}>
+          <IconUsers size={14} /> View voters
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const VOTERS_PAGE_SIZE = 50;
+
+/** Staff only: who voted for a candidate, identified by unique name (never real name). */
+function CandidateVotersDialog({
+  electionId,
+  positionId,
+  candidate,
+  onClose,
+}: {
+  electionId: string;
+  positionId: string;
+  candidate: CandidateResult;
+  onClose: () => void;
+}) {
+  const [page, setPage] = useState(1);
+  const [level, setLevel] = useState("");
+  const levels = candidate.level_breakdown ?? [];
+  const { data, error, isPending, refetch, isFetching } = useQuery({
+    queryKey: ["candidate-voters", electionId, candidate.id, level, page],
+    queryFn: () =>
+      api<Page<CandidateVoterOut>>(`admin/elections/${electionId}/positions/${positionId}/candidates/${candidate.id}/voters`, {
+        query: { page, page_size: VOTERS_PAGE_SIZE, level: level || undefined },
+      }),
+    placeholderData: keepPreviousData,
+  });
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      wide
+      title={`Voters for ${candidate.full_name}`}
+      description="Students appear by their unique name only. Real names are never shown here."
+    >
+      <div className="flex flex-col gap-4">
+        {levels.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by level">
+            {[{ level: "", votes: candidate.votes }, ...levels].map((l) => (
+              <button
+                key={l.level || "all"}
+                type="button"
+                aria-pressed={level === l.level}
+                onClick={() => {
+                  setLevel(l.level);
+                  setPage(1);
+                }}
+                className={clsx(
+                  "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                  level === l.level ? "bg-primary text-primary-fg" : "bg-subtle text-muted hover:text-foreground",
+                )}
+              >
+                {l.level ? levelLabel(l.level) : "All"} <span className="num opacity-80">{l.votes.toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {isPending ? (
+          <PageSpinner label="Loading voters…" />
+        ) : error ? (
+          <ErrorState error={error} onRetry={() => void refetch()} />
+        ) : data.items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">No voters found.</p>
+        ) : (
+          <div className={clsx("transition-opacity", isFetching && "opacity-60")}>
+            <Table>
+              <thead>
+                <tr>
+                  <Th className="w-12">#</Th>
+                  <Th>Unique name</Th>
+                  <Th>Level</Th>
+                  <Th className="text-right">Voted at (WAT)</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((v, i) => (
+                  <tr key={`${v.unique_name}-${v.voted_at}`}>
+                    <Td className="num text-muted">{(data.page - 1) * data.page_size + i + 1}</Td>
+                    <Td className={clsx("num font-semibold", v.unique_name === "Removed student" && "text-muted")}>{v.unique_name}</Td>
+                    <Td>{levelLabel(v.level)}</Td>
+                    <Td className="num text-right text-muted">{formatWAT(v.voted_at)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <Pagination page={data.page} pageSize={data.page_size} total={data.total} onPage={setPage} />
+          </div>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * `electionId` enables staff-only extras (the voter list per candidate). Leave it out for students:
+ * they see the per-level breakdown but not who voted.
+ */
+export function TallyPositions({ tally, final, electionId }: { tally: TallyOut; final?: boolean; electionId?: string }) {
   return (
     <div className="stagger grid grid-cols-1 gap-4 lg:grid-cols-2">
       {tally.positions.map((p, i) => (
-        <PositionResultCard key={p.id} position={p} index={i} final={final} />
+        <PositionResultCard key={p.id} position={p} index={i} final={final} electionId={electionId} />
       ))}
     </div>
   );

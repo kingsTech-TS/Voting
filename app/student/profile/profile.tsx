@@ -56,6 +56,13 @@ export function StudentProfile() {
                   {data.paid ? "Paid ✓" : "Not confirmed"}
                 </dd>
               </div>
+              {data.unique_name && (
+                <div className="col-span-2">
+                  <dt className="text-xs font-medium text-muted">Unique name</dt>
+                  <dd className="num mt-0.5 font-semibold text-primary">{data.unique_name}</dd>
+                  <p className="mt-1 text-xs text-muted">Shown instead of your real name wherever votes are listed.</p>
+                </div>
+              )}
             </dl>
           </div>
         </div>

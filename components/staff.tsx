@@ -441,7 +441,7 @@ export function LiveTally({ election, onEnded }: { election: ElectionOut; onEnde
       {tally ? (
         <>
           <TallyStats tally={tally} />
-          <TallyPositions tally={tally} final={tally.state === "ended"} />
+          <TallyPositions tally={tally} final={tally.state === "ended"} electionId={election.id} />
         </>
       ) : (
         <PageSpinner label="Connecting to the live count…" />

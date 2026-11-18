@@ -198,7 +198,7 @@ export function ArchiveDetail({ id, basePath }: { id: string; basePath: Base }) 
         ) : (
           <>
             <TallyStats tally={tally.data} />
-            <TallyPositions tally={tally.data} final />
+            <TallyPositions tally={tally.data} final electionId={id} />
           </>
         )}
       </section>

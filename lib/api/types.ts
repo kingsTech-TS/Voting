@@ -90,6 +90,8 @@ export interface StudentProfileOut {
   level: string;
   email: string | null;
   paid: boolean;
+  /** Public pseudonym shown in voter lists instead of the student's real name. */
+  unique_name: string | null;
   profile_picture_url: string | null;
   onboarding_required: "profile_picture" | null;
 }
@@ -205,9 +207,23 @@ export interface ArchivedElectionOut {
   winners: { position: string; names: string[]; votes: number }[];
 }
 
+export interface LevelVotes {
+  level: string;
+  votes: number;
+}
+
 export interface CandidateResult extends CandidateOut {
   votes: number;
   percentage: number;
+  /** How many of this candidate's votes came from each level (100, 200, ...), in level order. */
+  level_breakdown?: LevelVotes[];
+}
+
+/** A voter for one candidate. Only the student's unique name is shown, never their real name. */
+export interface CandidateVoterOut {
+  unique_name: string;
+  level: string;
+  voted_at: string;
 }
 
 export interface PositionResult {
