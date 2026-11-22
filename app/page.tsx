@@ -6,7 +6,7 @@ import { ThemeToggle } from "@/components/theme";
 
 const STEPS = [
   { n: "1", title: "Get added", body: "Your admin adds your Matric or Registration number. Nobody else can register." },
-  { n: "2", title: "Register", body: "Enter your number, confirm your name and level, and choose a password." },
+  { n: "2", title: "Register", body: "Enter your number, confirm your name, choose a password and enter the code we email you." },
   { n: "3", title: "Vote once", body: "Pick one candidate per position. Your ballot can't be cast twice." },
   { n: "4", title: "See results", body: "Results appear on your dashboard as soon as voting closes." },
 ];

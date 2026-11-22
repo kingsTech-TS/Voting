@@ -549,7 +549,7 @@ export function ImagePicker({
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-4" data-invalid={error ? true : undefined}>
       <button
         type="button"
         onClick={() => inputRef.current?.click()}

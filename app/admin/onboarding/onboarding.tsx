@@ -9,6 +9,7 @@ import { Button, TextField } from "@/components/ui";
 import { completeAdminOnboarding, logout } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import { adminOnboardingSchema, check, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function AdminOnboarding() {
   const router = useRouter();
@@ -23,7 +24,7 @@ export function AdminOnboarding() {
     e.preventDefault();
     const result = check(adminOnboardingSchema, values);
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     setError(null);
     try {
@@ -34,6 +35,7 @@ export function AdminOnboarding() {
     } catch (err) {
       if (err instanceof ApiError && err.code === "INVALID_PASSWORD") {
         setErrors({ current_password: err.message });
+        focusFirstError();
       } else if (err instanceof ApiError && err.code === "ALREADY_ONBOARDED") {
         router.replace("/admin");
         return;

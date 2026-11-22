@@ -11,6 +11,7 @@ import { api } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
 import type { ElectionOut } from "@/lib/api/types";
 import { check, stopReasonSchema } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function SuperAdminElection({ id }: { id: string }) {
   const { data: election, error, isPending, refetch } = useElection(id);
@@ -70,7 +71,7 @@ function StopDialog({ election, onClose }: { election: ElectionOut; onClose: () 
   const stop = async () => {
     const result = check(stopReasonSchema, { reason });
     setError(result.errors?.reason ?? null);
-    if (!result.data || !matches) return;
+    if (!result.data || !matches) return focusFirstError();
     setLoading(true);
     try {
       const updated = await api<ElectionOut>(`super-admin/elections/${election.id}/stop`, { json: { reason: result.data.reason } });

@@ -7,6 +7,7 @@ import { Button, TextAreaField, TextField } from "@/components/ui";
 import { ApiError } from "@/lib/api/errors";
 import { toLocalInput } from "@/lib/time";
 import { check, electionSchema, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 import type { ElectionOut } from "@/lib/api/types";
 
 export interface ElectionFormValues {
@@ -57,7 +58,7 @@ export function ElectionForm({
     e.preventDefault();
     const result = check(electionSchema, values);
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     setFormError(null);
     try {
@@ -66,6 +67,7 @@ export function ElectionForm({
       if (err instanceof ApiError && err.field) setErrors({ [err.field]: err.message });
       else if (err instanceof ApiError && err.code === "INVALID_TIMES") setErrors({ end_time: err.message });
       else setFormError(err instanceof Error ? err.message : "Something went wrong.");
+      focusFirstError();
     } finally {
       setLoading(false);
     }

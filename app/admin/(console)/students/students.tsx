@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { IconCheck, IconPlus, IconUpload } from "@/components/icons";
 import { StudentsTable } from "@/components/staff";
@@ -12,8 +12,53 @@ import { api } from "@/lib/api/client";
 import { ApiError, errorMessage } from "@/lib/api/errors";
 import type { MessageOut, SessionStateOut, StudentBulkDeleteOut, StudentOut } from "@/lib/api/types";
 import { IDENTIFIER_HINT, check, normalizeIdentifier, studentCreateSchema, studentUpdateSchema, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 type Pending = { kind: "edit" | "delete"; student: StudentOut } | null;
+
+/** How long a deleted row takes to slide out (matches .animate-row-out). */
+const ROW_OUT_MS = 450;
+/** How long a new student is marked as new: covers the refetch, then the row animates once on mount. */
+const ROW_NEW_MS = 4000;
+
+/** Rows to animate: students just added (slide in) and just deleted (slide out). */
+function useRowAnimations(invalidate: () => Promise<unknown>) {
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  const markNew = useCallback((id: string) => {
+    setFresh((s) => new Set(s).add(id));
+    timers.current.push(
+      setTimeout(
+        () =>
+          setFresh((s) => {
+            const next = new Set(s);
+            next.delete(id);
+            return next;
+          }),
+        ROW_NEW_MS,
+      ),
+    );
+  }, []);
+
+  /** Play the slide-out on these rows, then refresh the list (which removes them). */
+  const removeRows = useCallback(
+    async (ids: string[]) => {
+      if (ids.length) {
+        setLeaving(new Set(ids));
+        await new Promise((r) => timers.current.push(setTimeout(r, ROW_OUT_MS)));
+      }
+      await invalidate();
+      setLeaving(new Set());
+    },
+    [invalidate],
+  );
+
+  const rowState = (s: StudentOut) => (leaving.has(s.id) ? "leaving" : fresh.has(s.id) ? "new" : undefined);
+  return { markNew, removeRows, rowState };
+}
 type BulkPending = { students: StudentOut[]; clear: () => void } | null;
 
 export function AdminStudents() {
@@ -25,7 +70,8 @@ export function AdminStudents() {
   const session = useQuery({ queryKey: ["session"], queryFn: () => api<SessionStateOut>("admin/session") });
   const firstYear = session.data?.levels.find((l) => l.level === "100")?.count;
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["students"] });
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey: ["students"] }), [queryClient]);
+  const rows = useRowAnimations(invalidate);
 
   const markPaid = async (students: StudentOut[], paid: boolean, clear: () => void) => {
     setBusy(true);
@@ -53,7 +99,8 @@ export function AdminStudents() {
       }
       bulk.clear();
       setBulk(null);
-      void invalidate();
+      const blocked = new Set(res.blocked.map((b) => b.id));
+      void rows.removeRows(bulk.students.map((s) => s.id).filter((id) => !blocked.has(id)));
       void queryClient.invalidateQueries({ queryKey: ["session"] });
     } catch (err) {
       toast.error(errorMessage(err));
@@ -69,7 +116,8 @@ export function AdminStudents() {
       const res = await api<MessageOut>(`admin/students/${pending.student.id}`, { method: "DELETE" });
       toast.success(res.message);
       setPending(null);
-      void invalidate();
+      void rows.removeRows([pending.student.id]);
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -114,6 +162,7 @@ export function AdminStudents() {
       )}
       <StudentsTable
         endpoint="admin/students"
+        rowState={rows.rowState}
         bulkActions={(students, clear) => (
           <>
             <Button variant="secondary" size="sm" onClick={() => void markPaid(students, true, clear)} disabled={busy}>
@@ -139,7 +188,15 @@ export function AdminStudents() {
         )}
       />
 
-      <AddStudentDialog open={adding} onClose={() => setAdding(false)} onSaved={() => void invalidate()} />
+      <AddStudentDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onSaved={(s) => {
+          if (s) rows.markNew(s.id);
+          void invalidate();
+          void queryClient.invalidateQueries({ queryKey: ["session"] });
+        }}
+      />
       {pending?.kind === "edit" && (
         <EditStudentDialog student={pending.student} onClose={() => setPending(null)} onSaved={() => void invalidate()} />
       )}
@@ -182,14 +239,16 @@ export function AdminStudents() {
 
 type AddTab = "student" | "paid";
 
-function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
-  const empty = { identifier: "", full_name: "", level: "" };
+function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: (added?: StudentOut) => void }) {
+  const empty = { identifier: "", full_name: "", email: "", level: "" };
   const [tab, setTab] = useState<AddTab>("student");
   const [values, setValues] = useState(empty);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
   // In the "Paid student" tab: the number is already on the list, offer to mark that student as paid.
   const [existing, setExisting] = useState<string | null>(null);
+  // "Save and add another": a chip confirms each student added while the dialog stays open.
+  const [lastAdded, setLastAdded] = useState<StudentOut | null>(null);
   const paid = tab === "paid";
 
   const switchTab = (t: AddTab) => {
@@ -203,19 +262,21 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
     const result = check(studentCreateSchema, values);
     setErrors(result.errors ?? {});
     setExisting(null);
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     try {
       const s = await api<StudentOut>("admin/students", {
         json: {
           identifier: normalizeIdentifier(values.identifier),
           full_name: values.full_name.trim(),
+          email: values.email.trim().toLowerCase(),
           level: values.level.trim(),
           paid,
         },
       });
       toast.success(paid ? `${s.full_name} added and marked as paid.` : `${s.full_name} added.`);
-      onSaved();
+      onSaved(s);
+      setLastAdded(addAnother ? s : null);
       setValues(addAnother ? { ...empty, level: values.level } : empty);
       if (!addAnother) onClose();
     } catch (err) {
@@ -223,6 +284,10 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
         setExisting(normalizeIdentifier(values.identifier));
       } else if (err instanceof ApiError && (err.code === "STUDENT_EXISTS" || err.field === "identifier")) {
         setErrors({ identifier: err.message });
+        focusFirstError();
+      } else if (err instanceof ApiError && (err.code === "EMAIL_IN_USE" || err.field === "email")) {
+        setErrors({ email: err.message });
+        focusFirstError();
       } else toast.error(errorMessage(err));
     } finally {
       setLoading(false);
@@ -262,6 +327,18 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
       }
     >
       <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e, false)} noValidate>
+        {lastAdded && (
+          <p
+            key={lastAdded.id}
+            role="status"
+            className="animate-pop flex items-center gap-2 self-start rounded-full bg-primary-soft py-1 pl-1 pr-3 text-xs font-semibold text-primary"
+          >
+            <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-fg">
+              <IconCheck size={11} strokeWidth={3} />
+            </span>
+            {lastAdded.full_name} added
+          </p>
+        )}
         <div className="grid grid-cols-2 rounded-xl bg-subtle p-1 text-[13px] font-semibold" role="tablist" aria-label="Type of student">
           {([
             ["student", "Student"],
@@ -320,6 +397,17 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
           error={errors.full_name}
         />
         <TextField
+          label="Email address"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          placeholder="student@example.com"
+          value={values.email}
+          onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))}
+          error={errors.email}
+          hint="The student's registration code is sent here, so only they can claim the account."
+        />
+        <TextField
           label="Level"
           placeholder="e.g. 300"
           value={values.level}
@@ -333,15 +421,25 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
 }
 
 function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut; onClose: () => void; onSaved: () => void }) {
-  const [values, setValues] = useState({ identifier: student.identifier, full_name: student.full_name, level: student.level });
+  const [values, setValues] = useState({
+    identifier: student.identifier,
+    full_name: student.full_name,
+    email: student.email ?? "",
+    level: student.level,
+  });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
   const idChanged = normalizeIdentifier(values.identifier) !== student.identifier;
+  const newEmail = values.email.trim().toLowerCase();
+  const emailChanged = newEmail !== "" && newEmail !== (student.email ?? "");
 
   const save = async () => {
     const result = check(studentUpdateSchema, values);
-    setErrors(result.errors ?? {});
-    if (!result.data) return;
+    const fieldErrors = result.errors ?? {};
+    // An email can be changed but not removed.
+    if (student.email && !newEmail) fieldErrors.email = "Email address is required.";
+    setErrors(fieldErrors);
+    if (!result.data || fieldErrors.email) return focusFirstError();
     setLoading(true);
     try {
       await api<StudentOut>(`admin/students/${student.id}`, {
@@ -350,6 +448,7 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
           full_name: values.full_name.trim(),
           level: values.level.trim(),
           ...(idChanged ? { identifier: normalizeIdentifier(values.identifier) } : {}),
+          ...(emailChanged ? { email: newEmail } : {}),
         },
       });
       toast.success("Student updated.");
@@ -357,7 +456,9 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
       onClose();
     } catch (err) {
       if (err instanceof ApiError && (err.code === "STUDENT_EXISTS" || err.field === "identifier")) setErrors({ identifier: err.message });
-      else toast.error(errorMessage(err));
+      else if (err instanceof ApiError && (err.code === "EMAIL_IN_USE" || err.field === "email")) setErrors({ email: err.message });
+      else return toast.error(errorMessage(err));
+      focusFirstError();
     } finally {
       setLoading(false);
     }
@@ -405,6 +506,27 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
           onChange={(e) => setValues((v) => ({ ...v, full_name: e.target.value }))}
           error={errors.full_name}
         />
+        <TextField
+          label="Email address"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          placeholder="student@example.com"
+          value={values.email}
+          onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))}
+          error={errors.email}
+          hint={
+            student.is_registered
+              ? "Password resets and election results go here."
+              : "The student's registration code is sent here."
+          }
+        />
+        {!student.email && !student.is_registered && !newEmail && (
+          <Alert tone="warning">This student has no email on file, so they can&apos;t register until you add one.</Alert>
+        )}
+        {emailChanged && !student.is_registered && student.email && (
+          <Alert tone="info">Any registration code already sent to the old address will stop working.</Alert>
+        )}
         <TextField label="Level" value={values.level} onChange={(e) => setValues((v) => ({ ...v, level: e.target.value }))} error={errors.level} />
         <button type="submit" hidden />
       </form>

@@ -28,7 +28,8 @@ This repo is the **Next.js frontend**. The API lives in the sibling repo
 
 ### Students
 
-- Register with a Matric number (9 or 10 digits) or Registration number (12 digits + 2 letters).
+- Register with a Matric number (9 or 10 digits) or Registration number (12 digits + 2 letters), then confirm
+  with a 6-digit code emailed to the address the admin put on file.
   Their name and level appear as they type, so they can confirm it's them.
 - A profile photo is required on first sign-in.
 - The dashboard always shows where things stand:
@@ -46,8 +47,11 @@ This repo is the **Next.js frontend**. The API lives in the sibling repo
 ### Admins
 
 - First login: set their full name and replace the temporary password.
-- Students: add one at a time, import a CSV (with a per-row error report), search, edit, delete,
-  and reset a registration when a student forgets their password.
+- Students: add one at a time (with their email), import a CSV/Excel/Word/PDF list that includes an
+  email column (with a per-row error report), search, edit, delete, and reset a registration when a
+  student forgets their password. Students without an email on file can't register.
+- Paid list: import the names of students who paid; names are matched to the student list (partial
+  and ambiguous matches are flagged for review).
 - Elections: build a draft, add positions and candidates, then publish.
   - Candidate photos can be **zoomed and repositioned** before upload.
   - Candidates can be **edited** (name and/or photo) until voting opens.
@@ -194,7 +198,7 @@ delay, so 2,000 clients don't hit the API in the same second.
 | Path                          | Who         | Purpose                                   |
 | ----------------------------- | ----------- | ----------------------------------------- |
 | `/`                           | Everyone    | Landing page                              |
-| `/register`                   | Students    | Registration with live name lookup        |
+| `/register`                   | Students    | Registration: name lookup, password, email code |
 | `/login`                      | Students    | Student sign-in                           |
 | `/staff/login`                | Staff       | Admin and super admin sign-in             |
 | `/student`                    | Student     | Dashboard: ballot, waiting state, results |

@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/theme";
 import { Alert, Avatar, Button, Dialog, ErrorState, PageSpinner, TextField } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { ApiError, errorMessage } from "@/lib/api/errors";
+import { focusFirstError } from "@/lib/focus-error";
 import { email as emailSchema, type FieldErrors } from "@/lib/validation";
 import type { PasswordResetSentOut, StudentProfileOut } from "@/lib/api/types";
 
@@ -146,15 +147,24 @@ function EmailDialog({ current, onClose }: { current: string | null; onClose: ()
 
   const next = () => {
     const result = emailSchema.safeParse(email);
-    if (!result.success) return setErrors({ email: result.error.issues[0]?.message ?? "Enter a valid email address." });
-    if (current && result.data === current.toLowerCase()) return setErrors({ email: "That's already your email." });
+    if (!result.success) {
+      setErrors({ email: result.error.issues[0]?.message ?? "Enter a valid email address." });
+      return focusFirstError();
+    }
+    if (current && result.data === current.toLowerCase()) {
+      setErrors({ email: "That's already your email." });
+      return focusFirstError();
+    }
     setEmail(result.data);
     setErrors({});
     setStep("confirm");
   };
 
   const save = async () => {
-    if (!password) return setErrors({ current_password: "Enter your password." });
+    if (!password) {
+      setErrors({ current_password: "Enter your password." });
+      return focusFirstError();
+    }
     setLoading(true);
     setError(null);
     try {
@@ -166,10 +176,13 @@ function EmailDialog({ current, onClose }: { current: string | null; onClose: ()
       toast.success(current ? "Email updated." : "Email added. You can now reset your password any time.");
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.code === "INVALID_PASSWORD") setErrors({ current_password: err.message });
-      else if (err instanceof ApiError && err.code === "EMAIL_IN_USE") {
+      if (err instanceof ApiError && err.code === "INVALID_PASSWORD") {
+        setErrors({ current_password: err.message });
+        focusFirstError();
+      } else if (err instanceof ApiError && err.code === "EMAIL_IN_USE") {
         setErrors({ email: err.message });
         setStep("email");
+        focusFirstError();
       } else setError(errorMessage(err));
       setLoading(false);
     }

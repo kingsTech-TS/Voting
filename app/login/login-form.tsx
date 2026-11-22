@@ -8,6 +8,7 @@ import { FormError, destinationAfterLogin, useFlash, useRetryAfter } from "@/com
 import { Button, TextField } from "@/components/ui";
 import { loginStudent } from "@/lib/api/client";
 import { IDENTIFIER_HINT, check, normalizeIdentifier, studentLoginSchema, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function StudentLoginForm() {
   useFlash();
@@ -24,7 +25,7 @@ export function StudentLoginForm() {
     e.preventDefault();
     const result = check(studentLoginSchema, { identifier, password });
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     setError(null);
     try {

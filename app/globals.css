@@ -229,6 +229,44 @@ body {
 .animate-grow { transform-origin: bottom; animation: grow-up 0.9s var(--ease-out) both; }
 .animate-digit { display: inline-block; animation: digit-in 0.35s var(--ease-out) both; }
 
+/* ---- Student list: rows added, deleted and imported ---- */
+@keyframes row-flash {
+  0%, 35% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); }
+  100% { background-color: transparent; }
+}
+@keyframes row-slide-in {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes row-out {
+  0% { opacity: 1; transform: none; background-color: transparent; }
+  30% { opacity: 1; transform: none; background-color: color-mix(in srgb, var(--danger) 14%, transparent); }
+  100% { opacity: 0; transform: translateX(28px); background-color: color-mix(in srgb, var(--danger) 14%, transparent); }
+}
+/* A new row: slides in, then a green wash fades away. */
+.animate-row-in > td { animation: row-flash 2.4s ease-out both; }
+.animate-row-in > td > * { animation: row-slide-in 0.45s var(--ease-out) both; }
+/* A deleted row: turns red, slides right and fades before it leaves the list. */
+.animate-row-out > td { animation: row-out 0.45s var(--ease-out) forwards; pointer-events: none; }
+
+/* Import in progress: student cards drop one after another into the list. */
+@keyframes card-drop {
+  0% { opacity: 0; transform: translateY(-34px) scale(0.92); }
+  18%, 62% { opacity: 1; transform: none; }
+  82%, 100% { opacity: 0; transform: translateY(26px) scale(0.9); }
+}
+@keyframes tray-bump {
+  0%, 70%, 100% { transform: none; }
+  78% { transform: translateY(3px) scaleX(1.03); }
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+.animate-card-drop { animation: card-drop 2.4s var(--ease-out) infinite backwards; }
+.animate-tray-bump { animation: tray-bump 0.8s ease-out infinite; }
+.animate-shimmer { animation: shimmer 1.4s ease-in-out infinite; }
+
 /* Children appear one after another. */
 .stagger > * { animation: page-in 0.5s var(--ease-out) backwards; }
 .stagger > :nth-child(2) { animation-delay: 60ms; }

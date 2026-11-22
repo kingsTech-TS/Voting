@@ -11,25 +11,29 @@ import { Alert, BackLink, Badge, Button, Card, PageHeader, Pagination, Table, Td
 import { api } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
 import type { PaidConfirmOut, PaidPreviewOut, PaidPreviewRow, PaidRowStatus } from "@/lib/api/types";
-import { FORMAT_INFO, Stepper, Tip, UploadStep, csvCell, download, type Step } from "../import/import";
+import { FORMAT_INFO, ImportingScene, Stepper, Tip, UploadStep, csvCell, download, useCountUp, type Step } from "../import/import";
 
 const PAGE_SIZE = 100;
 
 const STATUS: Record<PaidRowStatus, { label: string; tone: "success" | "neutral" | "warning" | "danger" | "info" }> = {
   mark: { label: "Will be marked paid", tone: "success" },
   already: { label: "Already paid", tone: "neutral" },
-  not_found: { label: "Not in student list", tone: "danger" },
+  not_found: { label: "No match", tone: "danger" },
+  ambiguous: { label: "Several matches", tone: "warning" },
   duplicate: { label: "Duplicate", tone: "warning" },
   invalid: { label: "Can't read", tone: "warning" },
 };
 
-type Tab = "mark" | "not_found" | "already" | "invalid";
+type Tab = "mark" | "not_found" | "ambiguous" | "already" | "invalid";
+
+/** Names on the paid list that couldn't be matched to exactly one student. */
+type Unmatched = { name: string; problem: string };
 
 export function PaidImport() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>("upload");
   const [preview, setPreview] = useState<PaidPreviewOut | null>(null);
-  const [result, setResult] = useState<PaidConfirmOut | null>(null);
+  const [result, setResult] = useState<{ out: PaidConfirmOut; unmatched: Unmatched[] } | null>(null);
 
   const reset = () => {
     setPreview(null);
@@ -42,7 +46,7 @@ export function PaidImport() {
       <BackLink href="/admin/students">Students</BackLink>
       <PageHeader
         title="Import paid list"
-        description="Upload the list of students who have paid their dues. Only paid students can vote. Students on the paid list who aren't on the student list are flagged."
+        description="Upload the list of students who have paid their dues. Only paid students can vote. Names are matched against the student list, and anyone who can't be matched is flagged."
       />
       <Stepper step={step} reviewLabel="Review matches" />
 
@@ -50,7 +54,7 @@ export function PaidImport() {
         <UploadStep<PaidPreviewOut>
           endpoint="admin/students/paid/preview"
           heading="Drop the paid list here"
-          reading="Matching Matric/Reg numbers against the student list"
+          reading="Matching names against the student list"
           onPreview={(p) => {
             setPreview(p);
             setStep("review");
@@ -58,12 +62,15 @@ export function PaidImport() {
           tips={
             <>
               <Tip>
-                Each paid student&apos;s <b>Matric</b> or <b>Registration number</b>. Names, amounts and receipt numbers can be in the file
-                too — students are matched by their number.
+                Each paid student&apos;s <b>full name</b> (at least surname and first name). Students are matched by name in any order —{" "}
+                <i>OKAFOR Adaeze</i> matches <i>Adaeze Okafor</i>. Matric numbers, amounts and receipts in the file are ignored.
+              </Tip>
+              <Tip>
+                A name with a missing or extra middle name is a <b>partial match</b> — check it before confirming.
               </Tip>
               <Tip>Any level, in one file. Students already marked as paid are left as they are.</Tip>
               <Tip>
-                Anyone on the paid list who isn&apos;t on the student list is <b>flagged</b> so you can add them first.
+                Names that match nobody, or more than one student, are <b>flagged</b> so you can fix them by hand.
               </Tip>
               <Tip>CSV, Excel, Word or PDF. PDFs must contain real text, not a scanned image.</Tip>
             </>
@@ -74,38 +81,60 @@ export function PaidImport() {
         <Review
           preview={preview}
           onBack={reset}
-          onDone={(r) => {
-            setResult(r);
+          onDone={(out, unmatched) => {
+            setResult({ out, unmatched });
             setStep("done");
             void queryClient.invalidateQueries({ queryKey: ["students"] });
             void queryClient.invalidateQueries({ queryKey: ["session"] });
           }}
         />
       )}
-      {step === "done" && result && <Done result={result} onAnother={reset} />}
+      {step === "done" && result && <Done result={result.out} unmatched={result.unmatched} onAnother={reset} />}
     </>
   );
 }
 
-function downloadNotFound(rows: { identifier: string; name?: string }[]) {
-  const lines = ["identifier,name_in_paid_list,problem", ...rows.map((r) => [r.identifier, r.name ?? "", "Not in the student list"].map(csvCell).join(","))];
-  download("paid-but-not-in-student-list.csv", lines.join("\n") + "\n");
+function downloadUnmatched(rows: Unmatched[]) {
+  const lines = ["name_in_paid_list,problem", ...rows.map((r) => [r.name, r.problem].map(csvCell).join(","))];
+  download("paid-but-not-matched.csv", lines.join("\n") + "\n");
 }
 
-function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: () => void; onDone: (r: PaidConfirmOut) => void }) {
-  const [tab, setTab] = useState<Tab>(preview.counts.mark > 0 ? "mark" : preview.counts.not_found > 0 ? "not_found" : "already");
+function Review({
+  preview,
+  onBack,
+  onDone,
+}: {
+  preview: PaidPreviewOut;
+  onBack: () => void;
+  onDone: (r: PaidConfirmOut, unmatched: Unmatched[]) => void;
+}) {
+  const c = preview.counts;
+  const [tab, setTab] = useState<Tab>(c.mark > 0 ? "mark" : c.not_found > 0 ? "not_found" : c.ambiguous > 0 ? "ambiguous" : "already");
   const [page, setPage] = useState(1);
   const [saving, setSaving] = useState(false);
-  const c = preview.counts;
+  // Matches the admin unticked (e.g. a wrong partial match): left unpaid.
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
 
   const rows = useMemo(
     () => preview.rows.filter((r) => (tab === "invalid" ? r.status === "invalid" || r.status === "duplicate" : r.status === tab)),
     [preview.rows, tab],
   );
   const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const toMark = preview.rows.filter((r) => r.status === "mark");
-  const notFound = preview.rows.filter((r) => r.status === "not_found");
+  const matches = preview.rows.filter((r) => r.status === "mark" && r.identifier);
+  const toMark = matches.filter((r) => !excluded.has(r.line));
+  const partial = matches.filter((r) => r.match === "partial").length;
+  const unmatched: Unmatched[] = preview.rows
+    .filter((r) => r.status === "not_found" || r.status === "ambiguous")
+    .map((r) => ({ name: r.name_in_file, problem: r.note ?? STATUS[r.status].label }));
   const fmt = FORMAT_INFO[preview.format];
+
+  const toggle = (line: number) =>
+    setExcluded((s) => {
+      const next = new Set(s);
+      if (next.has(line)) next.delete(line);
+      else next.add(line);
+      return next;
+    });
 
   const confirm = async () => {
     setSaving(true);
@@ -114,7 +143,7 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
         json: { identifiers: toMark.map((r) => r.identifier), filename: preview.filename, format: preview.format },
       });
       toast.success(`${res.marked.toLocaleString()} student${res.marked === 1 ? "" : "s"} marked as paid.`);
-      onDone({ ...res, not_found: notFound.map((r) => r.identifier) });
+      onDone(res, unmatched);
     } catch (err) {
       toast.error(errorMessage(err));
       setSaving(false);
@@ -123,13 +152,21 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
 
   const tabs: [Tab, string, number][] = [
     ["mark", "To mark paid", c.mark],
-    ["not_found", "Not in student list", c.not_found],
+    ["not_found", "No match", c.not_found],
+    ...(c.ambiguous > 0 ? ([["ambiguous", "Several matches", c.ambiguous]] as [Tab, string, number][]) : []),
     ["already", "Already paid", c.already],
     ["invalid", "Can't read", c.invalid + c.duplicate],
   ];
+  const flagged = c.not_found + c.ambiguous;
 
   return (
     <div className="flex flex-col gap-4">
+      {saving && (
+        <ImportingScene
+          names={toMark.map((r) => r.student_name ?? r.name_in_file)}
+          title={<>Marking {toMark.length.toLocaleString()} student{toMark.length === 1 ? "" : "s"} as paid…</>}
+        />
+      )}
       <Card className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -137,7 +174,7 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
             <div className="min-w-0">
               <p className="truncate text-sm font-bold">{preview.filename}</p>
               <p className="text-xs text-muted">
-                {fmt.label} · <span className="num">{preview.rows.length.toLocaleString()}</span> entries found
+                {fmt.label} · <span className="num">{preview.rows.length.toLocaleString()}</span> names found
               </p>
             </div>
           </div>
@@ -148,11 +185,11 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { k: "mark", label: "Will be marked paid", v: c.mark, cls: "text-primary" },
-            { k: "not_found", label: "Not in student list", v: c.not_found, cls: c.not_found ? "text-danger" : "" },
+            { k: "flagged", label: "Not matched", v: flagged, cls: flagged ? "text-danger" : "" },
             { k: "already", label: "Already paid", v: c.already, cls: "" },
             { k: "invalid", label: "Can't read", v: c.invalid + c.duplicate, cls: "" },
           ].map((s) => (
-            <div key={s.k} className={clsx("rounded-2xl px-4 py-3", s.k === "not_found" && c.not_found ? "bg-danger-soft" : "bg-subtle")}>
+            <div key={s.k} className={clsx("rounded-2xl px-4 py-3", s.k === "flagged" && flagged ? "bg-danger-soft" : "bg-subtle")}>
               <p className="text-xs font-medium text-muted">{s.label}</p>
               <p className={clsx("num text-2xl font-extrabold tracking-tight", s.cls)}>{s.v.toLocaleString()}</p>
             </div>
@@ -160,20 +197,22 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
         </div>
       </Card>
 
-      {c.not_found > 0 && (
-        <Alert tone="danger" title={`${c.not_found.toLocaleString()} student${c.not_found === 1 ? " is" : "s are"} on the paid list but not on the student list`}>
-          They can&apos;t be marked as paid until they&apos;re added. Add them on the Students page (or import their class list), then import this
-          paid list again.{" "}
-          <button
-            type="button"
-            className="font-semibold underline"
-            onClick={() => downloadNotFound(notFound.map((r) => ({ identifier: r.identifier, name: r.name_in_file })))}
-          >
+      {partial > 0 && (
+        <Alert tone="warning" title={`${partial.toLocaleString()} partial name match${partial === 1 ? "" : "es"}`}>
+          Some names only partly match a student (for example a missing middle name). Check them in the &ldquo;To mark paid&rdquo; tab and untick any
+          that are the wrong student.
+        </Alert>
+      )}
+      {flagged > 0 && (
+        <Alert tone="danger" title={`${flagged.toLocaleString()} name${flagged === 1 ? "" : "s"} on the paid list couldn't be matched`}>
+          {c.not_found > 0 && <>{c.not_found.toLocaleString()} match no student — check the spelling or add the student first. </>}
+          {c.ambiguous > 0 && <>{c.ambiguous.toLocaleString()} match more than one student — mark the right one as paid on the Students page. </>}
+          <button type="button" className="font-semibold underline" onClick={() => downloadUnmatched(unmatched)}>
             Download the list
           </button>
         </Alert>
       )}
-      {c.mark === 0 && c.not_found === 0 && c.already > 0 && (
+      {c.mark === 0 && flagged === 0 && c.already > 0 && (
         <Alert tone="info" title="Everyone on this list is already marked as paid">
           There&apos;s nothing new to update.
         </Alert>
@@ -196,7 +235,7 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
                 tab === k ? "bg-card text-foreground shadow-sm" : "text-muted hover:text-foreground",
               )}
             >
-              {k === "not_found" && n > 0 && <IconAlert size={13} className="text-danger" />}
+              {(k === "not_found" || k === "ambiguous") && n > 0 && <IconAlert size={13} className="text-danger" />}
               {label} <span className="num text-muted">{n.toLocaleString()}</span>
             </button>
           ))}
@@ -209,15 +248,22 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
             <Table>
               <thead>
                 <tr>
+                  {tab === "mark" && <Th className="w-10"><span className="sr-only">Mark as paid</span></Th>}
                   <Th>Line</Th>
-                  <Th>Matric / Reg no.</Th>
-                  <Th>Student</Th>
+                  <Th>Name in file</Th>
+                  <Th>Matched student</Th>
                   <Th>Status</Th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r) => (
-                  <PaidRow key={r.line} row={r} />
+                  <PaidRow
+                    key={r.line}
+                    row={r}
+                    selectable={tab === "mark"}
+                    checked={!excluded.has(r.line)}
+                    onToggle={() => toggle(r.line)}
+                  />
                 ))}
               </tbody>
             </Table>
@@ -230,10 +276,10 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
         <p className="text-sm">
           <span className="num font-extrabold text-primary">{toMark.length.toLocaleString()}</span> student{toMark.length === 1 ? "" : "s"} will be
           marked as paid
-          {c.not_found > 0 && (
+          {flagged > 0 && (
             <>
               {" "}
-              · <span className="num font-bold text-danger">{c.not_found.toLocaleString()}</span> flagged
+              · <span className="num font-bold text-danger">{flagged.toLocaleString()}</span> not matched
             </>
           )}
         </p>
@@ -250,31 +296,59 @@ function Review({ preview, onBack, onDone }: { preview: PaidPreviewOut; onBack: 
   );
 }
 
-function PaidRow({ row: r }: { row: PaidPreviewRow }) {
+function PaidRow({
+  row: r,
+  selectable,
+  checked,
+  onToggle,
+}: {
+  row: PaidPreviewRow;
+  selectable: boolean;
+  checked: boolean;
+  onToggle: () => void;
+}) {
   const s = STATUS[r.status];
+  const off = selectable && !checked;
   return (
-    <tr className={r.status === "not_found" ? "bg-danger-soft/40" : undefined}>
+    <tr className={clsx(r.status === "not_found" && "bg-danger-soft/40", off && "text-muted")}>
+      {selectable && (
+        <Td>
+          <input
+            type="checkbox"
+            aria-label={`Mark ${r.student_name ?? r.name_in_file} as paid`}
+            className="size-4 accent-[var(--primary)]"
+            checked={checked}
+            onChange={onToggle}
+          />
+        </Td>
+      )}
       <Td className="num text-muted">{r.line}</Td>
-      <Td className="font-mono text-xs">{r.identifier || "—"}</Td>
+      <Td>{r.name_in_file || "—"}</Td>
       <Td>
         {r.student_name ? (
           <>
             <p className="font-medium">{r.student_name}</p>
-            <p className="text-xs text-muted">{r.level} level</p>
+            <p className="text-xs text-muted">
+              <span className="font-mono">{r.identifier}</span> · {r.level} level
+            </p>
           </>
         ) : (
-          <p className="text-muted">{r.name_in_file || "—"}</p>
+          <p className="text-muted">—</p>
         )}
       </Td>
       <Td>
-        <Badge tone={s.tone}>{s.label}</Badge>
-        {r.note && r.status !== "mark" && <p className="mt-1 text-xs text-muted">{r.note}</p>}
+        <span className="flex flex-wrap gap-1">
+          <Badge tone={off ? "neutral" : s.tone}>{off ? "Won't be marked" : s.label}</Badge>
+          {r.match === "partial" && <Badge tone="warning">Partial match</Badge>}
+        </span>
+        {r.note && <p className="mt-1 text-xs text-muted">{r.note}</p>}
       </Td>
     </tr>
   );
 }
 
-function Done({ result, onAnother }: { result: PaidConfirmOut; onAnother: () => void }) {
+function Done({ result, unmatched, onAnother }: { result: PaidConfirmOut; unmatched: Unmatched[]; onAnother: () => void }) {
+  const marked = useCountUp(result.marked);
   return (
     <Card className="flex flex-col gap-6">
       <div className="animate-pop flex flex-col items-center gap-3 py-4 text-center">
@@ -282,15 +356,18 @@ function Done({ result, onAnother }: { result: PaidConfirmOut; onAnother: () => 
           <IconCheck size={28} strokeWidth={3} />
         </span>
         <div>
-          <p className="num text-3xl font-extrabold tracking-tight">{result.marked.toLocaleString()}</p>
+          <p className="num text-3xl font-extrabold tracking-tight">{marked.toLocaleString()}</p>
           <p className="text-sm text-muted">student{result.marked === 1 ? "" : "s"} marked as paid — they can now vote</p>
         </div>
       </div>
-      {result.not_found.length > 0 && (
-        <Alert tone="danger" title={`${result.not_found.length.toLocaleString()} not found in the student list`}>
-          {result.not_found.slice(0, 12).join(", ")}
-          {result.not_found.length > 12 && ` and ${result.not_found.length - 12} more`}.{" "}
-          <button type="button" className="font-semibold underline" onClick={() => downloadNotFound(result.not_found.map((identifier) => ({ identifier })))}>
+      {unmatched.length > 0 && (
+        <Alert tone="danger" title={`${unmatched.length.toLocaleString()} name${unmatched.length === 1 ? "" : "s"} not matched`}>
+          {unmatched
+            .slice(0, 12)
+            .map((u) => u.name)
+            .join(", ")}
+          {unmatched.length > 12 && ` and ${unmatched.length - 12} more`}. Mark them as paid by hand on the Students page.{" "}
+          <button type="button" className="font-semibold underline" onClick={() => downloadUnmatched(unmatched)}>
             Download the list
           </button>
         </Alert>

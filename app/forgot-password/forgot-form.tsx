@@ -10,6 +10,7 @@ import { Button, TextField } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import type { MessageOut } from "@/lib/api/types";
 import { check, forgotPasswordSchema, normalizeIdentifier, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function ForgotPasswordForm() {
   const params = useSearchParams();
@@ -24,7 +25,7 @@ export function ForgotPasswordForm() {
     e.preventDefault();
     const result = check(forgotPasswordSchema, { login });
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     const value = login.includes("@") ? login.trim().toLowerCase() : normalizeIdentifier(login);
     setLoading(true);
     setError(null);

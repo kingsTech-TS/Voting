@@ -64,6 +64,21 @@ export interface StudentLookupOut {
   id_type: IdType;
   full_name: string;
   level: string;
+  /** Masked email the registration code goes to; null when the admin hasn't added one. */
+  email_hint: string | null;
+}
+
+/** Step 1 of registration: a 6-digit code was emailed to the address on file. */
+export interface StudentRegisterStartedOut {
+  code: "OTP_SENT";
+  message: string;
+  /** Send back with the code (and to resend). Only valid for this sign-up attempt. */
+  registration_token: string;
+  email_hint: string;
+  /** Seconds until the code expires. */
+  expires_in: number;
+  /** Seconds before another code can be requested. */
+  resend_in: number;
 }
 
 export interface StudentOut {
@@ -97,12 +112,14 @@ export interface StudentProfileOut {
 }
 
 export type ImportFormat = "csv" | "xlsx" | "docx" | "pdf";
-export type ImportRowStatus = "new" | "exists" | "duplicate" | "invalid";
+/** add_email = already on the list without an email; importing fills the email in. */
+export type ImportRowStatus = "new" | "add_email" | "exists" | "duplicate" | "invalid";
 
 export interface ImportPreviewRow {
   line: number;
   identifier: string;
   full_name: string;
+  email: string | null;
   level: string | null;
   status: ImportRowStatus;
   note: string | null;
@@ -125,6 +142,8 @@ export interface StudentBulkDeleteOut {
 
 export interface BulkImportOut {
   created: number;
+  /** Students already on the list whose missing email was filled in. */
+  emails_added: number;
   skipped: { line: number; identifier: string; reason: string }[];
   errors: { line: number; identifier: string; error: string }[];
 }
@@ -190,6 +209,8 @@ export interface EmailConfigOut {
   results_delivery: "individual" | "broadcast";
   provider: string;
   configured: boolean;
+  /** Who sends registration codes and password resets (e.g. zeptomail, smtp). */
+  transactional_provider: string;
 }
 
 export interface ShareResultsOut {
@@ -333,14 +354,19 @@ export interface SessionAdvanceOut {
   graduated_deleted: number;
 }
 
-export type PaidRowStatus = "mark" | "already" | "not_found" | "duplicate" | "invalid";
+export type PaidRowStatus = "mark" | "already" | "not_found" | "ambiguous" | "duplicate" | "invalid";
 
+/** Paid lists are matched on names; Matric/Reg numbers in the file are ignored. */
 export interface PaidPreviewRow {
   line: number;
-  identifier: string;
   name_in_file: string;
+  /** Matric/Reg number of the student the name matched (null when nobody matched). */
+  identifier: string | null;
+  student_id: string | null;
   student_name: string | null;
   level: string | null;
+  /** partial = some names missing or extra; worth a second look before confirming. */
+  match: "exact" | "partial" | null;
   status: PaidRowStatus;
   note: string | null;
 }

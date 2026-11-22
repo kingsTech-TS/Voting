@@ -14,6 +14,7 @@ import { api } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import type { PasswordResetOut, ResetTokenCheckOut } from "@/lib/api/types";
 import { check, resetPasswordSchema, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export function ResetPasswordForm() {
     e.preventDefault();
     const result = check(resetPasswordSchema, { password, confirm_password: confirm });
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     setError(null);
     try {

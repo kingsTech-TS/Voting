@@ -65,8 +65,11 @@ export function StudentsTable({
   actions,
   toolbar,
   bulkActions,
+  rowState,
 }: {
   endpoint: "admin/students" | "super-admin/students";
+  /** Animates a row: "new" just added (slides in), "leaving" just deleted (slides out). */
+  rowState?: (s: StudentOut) => "new" | "leaving" | undefined;
   actions?: (s: StudentOut) => ReactNode;
   toolbar?: ReactNode;
   /** Enables tick boxes; renders the bar shown while students are selected. */
@@ -253,7 +256,14 @@ export function StudentsTable({
             </thead>
             <tbody>
               {data.items.map((s) => (
-                <tr key={s.id} className={selected.has(s.id) ? "bg-primary-soft/50" : undefined}>
+                <tr
+                  key={s.id}
+                  className={clsx(
+                    selected.has(s.id) && "bg-primary-soft/50",
+                    rowState?.(s) === "new" && "animate-row-in",
+                    rowState?.(s) === "leaving" && "animate-row-out",
+                  )}
+                >
                   {bulkActions && (
                     <Td>
                       <input
@@ -270,7 +280,15 @@ export function StudentsTable({
                       <Avatar src={s.profile_picture_url} name={s.full_name} size={32} />
                       <span className="min-w-0">
                         <span className="block font-medium">{s.full_name}</span>
-                        {s.email && <span className="block truncate text-xs text-muted">{s.email}</span>}
+                        {s.email ? (
+                          <span className="block truncate text-xs text-muted">{s.email}</span>
+                        ) : (
+                          !s.is_registered && (
+                            <span className="block text-xs font-medium text-warning" title="Add an email so this student can register">
+                              No email · can&apos;t register
+                            </span>
+                          )
+                        )}
                       </span>
                     </div>
                   </Td>

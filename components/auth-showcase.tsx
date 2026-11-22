@@ -249,7 +249,7 @@ function NewPasswordChip() {
 const COPY: Record<ShowcaseKind, { title: string; body: string }> = {
   "student-login": { title: "Your ballot is waiting.", body: "Log in to see who's standing and cast your vote when polls open." },
   "staff-login": { title: "Run the election.", body: "Manage students, publish ballots and watch the count come in live." },
-  register: { title: "On the list? You're in.", body: "Enter your number, confirm it's you, and choose a password." },
+  register: { title: "On the list? You're in.", body: "Enter your number, choose a password, and confirm with the code we email you." },
   reset: { title: "Locked out? No problem.", body: "We'll email you a secure, one-time link to choose a new password." },
 };
 

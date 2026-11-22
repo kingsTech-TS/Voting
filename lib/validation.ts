@@ -38,11 +38,15 @@ export const email = z.string().trim().toLowerCase().email("Enter a valid email 
 export const registerSchema = z
   .object({
     identifier,
-    email: z.string().trim().min(1, "Email address is required.").pipe(email),
     password,
     confirm_password: z.string(),
   })
   .refine((d) => d.password === d.confirm_password, { message: "Passwords do not match.", path: ["confirm_password"] });
+
+export const OTP_RE = /^\d{6}$/;
+export const otpSchema = z.object({
+  otp: z.string().trim().regex(OTP_RE, "Enter the 6-digit code from the email."),
+});
 
 export const forgotPasswordSchema = z.object({
   login: z
@@ -78,12 +82,15 @@ export const adminOnboardingSchema = z
 export const studentCreateSchema = z.object({
   identifier,
   full_name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(120),
+  email: z.string().trim().min(1, "Email address is required.").pipe(email),
   level: z.string().trim().min(1, "Level is required.").max(20),
 });
 
+/** The email can't be cleared once set, so it is only required when the student already has one. */
 export const studentUpdateSchema = z.object({
   identifier,
   full_name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(120),
+  email: z.union([z.literal(""), email]),
   level: z.string().trim().min(1, "Level is required.").max(20),
 });
 

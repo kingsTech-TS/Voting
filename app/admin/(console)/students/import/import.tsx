@@ -4,17 +4,18 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { IconArchive, IconCheck, IconFile, IconUpload, IconUsers } from "@/components/icons";
 import { buttonClass } from "@/components/styles";
-import { Alert, BackLink, Badge, Button, Card, Input, PageHeader, Pagination, Spinner, Table, Td, Th } from "@/components/ui";
+import { Alert, Avatar, BackLink, Badge, Button, Card, Input, PageHeader, Pagination, Spinner, Table, Td, Th } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
 import type { BulkImportOut, ImportFormat, ImportPreviewOut, ImportPreviewRow, ImportRowStatus } from "@/lib/api/types";
 import { LEVEL_RE, MAX_CSV_BYTES, MAX_DOC_BYTES } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
-const TEMPLATE = "identifier,full_name\n220703012,Jane Doe\n202650372846LA,John Smith\n";
+const TEMPLATE = "identifier,full_name,email\n220703012,Jane Doe,jane.doe@example.com\n202650372846LA,John Smith,john.smith@example.com\n";
 const LEVELS = ["100", "200", "300", "400", "500", "600"];
 const PAGE_SIZE = 100;
 
@@ -27,6 +28,7 @@ export const FORMAT_INFO: Record<ImportFormat, { label: string; ext: string; ton
 
 const STATUS: Record<ImportRowStatus, { label: string; tone: "success" | "neutral" | "warning" | "danger" }> = {
   new: { label: "Ready", tone: "success" },
+  add_email: { label: "Add email", tone: "success" },
   exists: { label: "Already added", tone: "neutral" },
   duplicate: { label: "Duplicate", tone: "warning" },
   invalid: { label: "Can't read", tone: "danger" },
@@ -264,7 +266,11 @@ export function UploadStep<T = ImportPreviewOut>({
           <>
           <Tip>
             Each student&apos;s <b>Matric number</b> (9 or 10 digits) or <b>Registration number</b> (12 digits + 2 letters) next to their{" "}
-            <b>full name</b>.
+            <b>full name</b> and <b>email address</b>.
+          </Tip>
+          <Tip>
+            The email is required: students get their registration code there. Students already on the list without an email get it
+            filled in.
           </Tip>
           <Tip>
             A table with headings like <b>Matric No</b> and <b>Name</b> (or <b>Surname</b> + <b>Other Names</b>) works best. Plain lists
@@ -361,25 +367,27 @@ function ReviewNew({
   const [useCustom, setUseCustom] = useState(Boolean(suggested && !LEVELS.includes(suggested)));
   const [names, setNames] = useState<Record<number, string>>({});
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
-  const [filter, setFilter] = useState<Filter>(preview.counts.new === 0 ? "invalid" : "new");
+  const [filter, setFilter] = useState<Filter>(preview.counts.new + preview.counts.add_email === 0 ? "invalid" : "new");
   const [page, setPage] = useState(1);
   const [levelError, setLevelError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const chosenLevel = (useCustom ? customLevel : level).trim();
   const nameOf = (r: ImportPreviewRow) => names[r.line] ?? r.full_name;
-  const selectable = preview.rows.filter((r) => r.status === "new");
+  // add_email rows are already on the list: importing only fills in their email.
+  const isReady = (r: ImportPreviewRow) => r.status === "new" || r.status === "add_email";
+  const selectable = preview.rows.filter(isReady);
   const selected = selectable.filter((r) => !excluded.has(r.line));
-  const badNames = selected.filter((r) => nameOf(r).trim().length < 2);
+  const badNames = selected.filter((r) => r.status === "new" && nameOf(r).trim().length < 2);
 
   const visible = useMemo(
     () =>
       // Students already in the system (and repeats within the file) are never shown: only new names.
-      preview.rows.filter((r) => r.status === filter),
+      preview.rows.filter((r) => (filter === "new" ? isReady(r) : r.status === filter)),
     [preview.rows, filter],
   );
   const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const allOnPage = pageRows.filter((r) => r.status === "new");
+  const allOnPage = pageRows.filter(isReady);
   const allOnPageChecked = allOnPage.length > 0 && allOnPage.every((r) => !excluded.has(r.line));
 
   const toggle = (line: number) =>
@@ -401,10 +409,19 @@ function ReviewNew({
     });
 
   const submit = async () => {
-    if (!chosenLevel) return setLevelError("Choose the level for these students.");
-    if (!LEVEL_RE.test(chosenLevel)) return setLevelError("Use up to 20 letters or numbers, e.g. 300.");
+    if (!chosenLevel || !LEVEL_RE.test(chosenLevel)) {
+      setLevelError(chosenLevel ? "Use up to 20 letters or numbers, e.g. 300." : "Choose the level for these students.");
+      return focusFirstError();
+    }
     setLevelError(null);
-    if (badNames.length) return toast.error("Some selected students have no name. Fix or untick them.");
+    if (badNames.length) {
+      // Open the page holding the first student without a name, then put the cursor in that box.
+      const index = selectable.findIndex((r) => r.line === badNames[0].line);
+      setFilter("new");
+      setPage(Math.floor(index / PAGE_SIZE) + 1);
+      toast.error("Some selected students have no name. Fix or untick them.");
+      return focusFirstError();
+    }
     setSaving(true);
     try {
       const out = await api<BulkImportOut>("admin/students/bulk/rows", {
@@ -412,10 +429,12 @@ function ReviewNew({
           level: chosenLevel,
           filename: preview.filename,
           format: preview.format,
-          rows: selected.map((r) => ({ line: r.line, identifier: r.identifier, full_name: nameOf(r).trim() })),
+          rows: selected.map((r) => ({ line: r.line, identifier: r.identifier, full_name: nameOf(r).trim(), email: r.email })),
         },
       });
-      toast.success(`${out.created.toLocaleString()} student${out.created === 1 ? "" : "s"} added to ${chosenLevel} level.`);
+      const parts = [`${out.created.toLocaleString()} student${out.created === 1 ? "" : "s"} added to ${chosenLevel} level`];
+      if (out.emails_added) parts.push(`${out.emails_added.toLocaleString()} email${out.emails_added === 1 ? "" : "s"} added`);
+      toast.success(`${parts.join(" · ")}.`);
       onDone(out, chosenLevel);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -427,6 +446,13 @@ function ReviewNew({
 
   return (
     <div className="flex flex-col gap-4">
+      {saving && (
+        <ImportingScene
+          names={selected.map(nameOf)}
+          title={<>Adding {selected.length.toLocaleString()} student{selected.length === 1 ? "" : "s"}…</>}
+          detail={<>To {chosenLevel} level · this can take a few seconds for long lists</>}
+        />
+      )}
       {/* file summary */}
       <Card className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -449,14 +475,16 @@ function ReviewNew({
             Choose a different file
           </Button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {(["new", "exists", "invalid"] as ImportRowStatus[]).map((k) => (
+        <div className={clsx("grid gap-2", preview.counts.add_email > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
+          {(["new", ...(preview.counts.add_email > 0 ? ["add_email"] : []), "exists", "invalid"] as ImportRowStatus[]).map((k) => (
             <div key={k} className="rounded-2xl bg-subtle px-4 py-3">
-              <p className="text-xs font-medium text-muted">{k === "new" ? "New students" : k === "exists" ? "Already in the system" : STATUS[k].label}</p>
+              <p className="text-xs font-medium text-muted">
+                {k === "new" ? "New students" : k === "add_email" ? "Emails to add" : k === "exists" ? "Already in the system" : STATUS[k].label}
+              </p>
               <p
                 className={clsx(
                   "num text-2xl font-extrabold tracking-tight",
-                  k === "new" && "text-primary",
+                  (k === "new" || k === "add_email") && "text-primary",
                   k === "invalid" && preview.counts.invalid > 0 && "text-danger",
                 )}
               >
@@ -478,7 +506,7 @@ function ReviewNew({
             {preview.levels_in_file.length > 1 && <> The file mentions {preview.levels_in_file.join(", ")} — upload one level at a time.</>}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Level">
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Level" aria-invalid={levelError ? true : undefined}>
           {LEVELS.map((l) => {
             const on = !useCustom && level === l;
             return (
@@ -535,11 +563,13 @@ function ReviewNew({
       {/* rows */}
       <Card className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-bold tracking-tight">New students to add</h2>
+          <h2 className="text-base font-bold tracking-tight">
+            {preview.counts.add_email > 0 ? "Students to add or update" : "New students to add"}
+          </h2>
           {preview.counts.invalid > 0 && (
           <div className="flex rounded-xl bg-subtle p-1 text-[13px] font-semibold" role="tablist">
             {([
-              ["new", `New ${preview.counts.new}`],
+              ["new", `Ready ${preview.counts.new + preview.counts.add_email}`],
               ["invalid", `Can't read ${preview.counts.invalid}`],
             ] as [Filter, string][]).map(([k, label]) => (
               <button
@@ -581,13 +611,16 @@ function ReviewNew({
                   </Th>
                   <Th>Matric / Reg no.</Th>
                   <Th>Full name</Th>
+                  <Th>Email</Th>
                   <Th>Status</Th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r) => {
-                  const ready = r.status === "new";
+                  const ready = isReady(r);
                   const on = ready && !excluded.has(r.line);
+                  // Only new students take the edited name; add_email rows keep the name already on the list.
+                  const editName = r.status === "new";
                   return (
                     <tr key={r.line} className={clsx(!on && "text-muted")}>
                       <Td>
@@ -602,17 +635,27 @@ function ReviewNew({
                       </Td>
                       <Td className="font-mono text-xs">{r.identifier || "—"}</Td>
                       <Td>
-                        {ready ? (
+                        {editName ? (
                           <Input
                             aria-label={`Full name for ${r.identifier}`}
                             value={nameOf(r)}
                             maxLength={120}
                             disabled={!on}
+                            aria-invalid={on && nameOf(r).trim().length < 2 ? true : undefined}
                             onChange={(e) => setNames((n) => ({ ...n, [r.line]: e.target.value }))}
                             className={clsx("!h-9 min-w-48", on && nameOf(r).trim().length < 2 && "border-danger")}
                           />
                         ) : (
                           <span>{r.full_name || "—"}</span>
+                        )}
+                      </Td>
+                      <Td className="max-w-56 text-xs">
+                        {r.email ? (
+                          <span className="block truncate" title={r.email}>
+                            {r.email}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
                         )}
                       </Td>
                       <Td>
@@ -655,9 +698,73 @@ function ReviewNew({
   );
 }
 
+// ---- animations -----------------------------------------------------------------------------------
+
+/** Counts from 0 up to `target` (eased). Shows the final number straight away under reduced motion. */
+export function useCountUp(target: number, ms = 900) {
+  const [value, setValue] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? target : 0,
+  );
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      setValue(Math.round(target * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, ms]);
+  return value;
+}
+
+/** Shown while an import is saving: student cards drop one after another into the list. */
+export function ImportingScene({ names, title, detail }: { names: string[]; title: ReactNode; detail?: ReactNode }) {
+  const cards = (names.length ? names : ["New student"]).slice(0, 3);
+  return (
+    <div
+      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-background/75 p-4 backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="animate-dialog-in surface flex w-full max-w-sm flex-col items-center gap-5 px-6 py-8 text-center shadow-[var(--shadow-card)]">
+        <div className="relative h-36 w-56" aria-hidden="true">
+          {cards.map((name, i) => (
+            <div
+              key={`${name}-${i}`}
+              className="animate-card-drop absolute inset-x-4 top-4 flex items-center gap-2.5 rounded-2xl bg-card px-3 py-2.5 shadow-[var(--shadow-card)] ring-1 ring-border"
+              style={{ animationDelay: `${i * 0.8}s` }}
+            >
+              <Avatar src={null} name={name} size={28} />
+              <span className="min-w-0 truncate text-left text-xs font-semibold">{name}</span>
+              <span className="ml-auto flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg">
+                <IconCheck size={11} strokeWidth={3} />
+              </span>
+            </div>
+          ))}
+          <div className="animate-tray-bump absolute inset-x-0 bottom-0 flex h-12 items-center justify-center gap-2 rounded-2xl bg-primary-soft text-primary">
+            <IconUsers size={18} />
+            <span className="text-xs font-bold">Student list</span>
+          </div>
+        </div>
+        <div>
+          <p className="text-base font-bold tracking-tight">{title}</p>
+          {detail && <p className="mt-1 text-xs text-muted">{detail}</p>}
+        </div>
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-subtle" aria-hidden="true">
+          <span className="animate-shimmer absolute inset-y-0 left-0 w-2/5 rounded-full bg-primary" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- step 3: result -------------------------------------------------------------------------------
 
 function ResultStep({ result, level, onAnother }: { result: BulkImportOut; level: string; onAnother: () => void }) {
+  const created = useCountUp(result.created);
   const downloadProblems = () => {
     const rows = [
       "line,identifier,problem",
@@ -678,10 +785,16 @@ function ResultStep({ result, level, onAnother }: { result: BulkImportOut; level
           <IconCheck size={28} strokeWidth={3} />
         </span>
         <div>
-          <p className="num text-3xl font-extrabold tracking-tight">{result.created.toLocaleString()}</p>
+          <p className="num text-3xl font-extrabold tracking-tight">{created.toLocaleString()}</p>
           <p className="text-sm text-muted">
             student{result.created === 1 ? "" : "s"} added to <span className="font-semibold text-foreground">{level} level</span>
           </p>
+          {result.emails_added > 0 && (
+            <p className="mt-1 text-sm text-muted">
+              + <span className="num font-semibold text-foreground">{result.emails_added.toLocaleString()}</span> email
+              {result.emails_added === 1 ? "" : "s"} added to students already on the list
+            </p>
+          )}
         </div>
       </div>
 

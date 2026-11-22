@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { ApiError, errorMessage } from "@/lib/api/errors";
+import { focusFirstError } from "@/lib/focus-error";
 import type { AdminCreatedOut, MessageOut, Page, StaffOut } from "@/lib/api/types";
 import { formatDate, formatWAT } from "@/lib/time";
 import { check, email as emailSchema } from "@/lib/validation";
@@ -207,14 +208,16 @@ function AddAdminDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
     e?.preventDefault();
     const result = check(z.object({ email: emailSchema }), { email: value });
     setError(result.errors?.email ?? null);
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     try {
       onCreated(await api<AdminCreatedOut>("super-admin/admins", { json: { email: result.data.email } }));
       setValue("");
     } catch (err) {
-      if (err instanceof ApiError && (err.code === "EMAIL_EXISTS" || err.field === "email")) setError(err.message);
-      else toast.error(errorMessage(err));
+      if (err instanceof ApiError && (err.code === "EMAIL_EXISTS" || err.field === "email")) {
+        setError(err.message);
+        focusFirstError();
+      } else toast.error(errorMessage(err));
     } finally {
       setLoading(false);
     }

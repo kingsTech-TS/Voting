@@ -19,6 +19,7 @@ import { ApiError, errorMessage } from "@/lib/api/errors";
 import type { CandidateOut, ElectionOut, MessageOut, Page, PositionOut, SessionStateOut, StudentOut } from "@/lib/api/types";
 import { serverNow, toAwareISO } from "@/lib/time";
 import { candidateNameSchema, check, checkImage, positionSchema } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 
 export function ElectionBuilder({ id }: { id: string }) {
   const router = useRouter();
@@ -274,7 +275,7 @@ function AddPosition({ electionId, mutate }: { electionId: string; mutate: Mutat
     e.preventDefault();
     const result = check(positionSchema, { name });
     setError(result.errors?.name ?? null);
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     if (await mutate(`admin/elections/${electionId}/positions`, { json: { name: result.data.name } }, "Position added.")) setName("");
     setLoading(false);
@@ -288,6 +289,7 @@ function AddPosition({ electionId, mutate }: { electionId: string; mutate: Mutat
           value={name}
           onChange={(e) => setName(e.target.value)}
           aria-label="Position name"
+          aria-invalid={error ? true : undefined}
           className="border-transparent bg-transparent hover:border-transparent focus:border-primary"
         />
         {error && <p className="mt-1 px-3 text-xs font-medium text-danger">{error}</p>}
@@ -524,7 +526,7 @@ function CandidateDialog({
     if (fromStudent) {
       setStudentError(student ? null : "Choose a student from the list.");
       setErrors({ image: needsPhoto ? "Upload a photo of the candidate." : null });
-      if (!student || needsPhoto) return;
+      if (!student || needsPhoto) return focusFirstError();
       setLoading(true);
       try {
         const form = new FormData();
@@ -541,7 +543,7 @@ function CandidateDialog({
 
     const result = check(candidateNameSchema, { full_name: fullName });
     setErrors({ full_name: result.errors?.full_name, image: needsPhoto ? "Choose a photo of the candidate." : null });
-    if (!result.data || needsPhoto) return;
+    if (!result.data || needsPhoto) return focusFirstError();
 
     const nameChanged = !editing || result.data.full_name !== candidate.full_name;
     if (editing && !nameChanged && !file) {
@@ -610,7 +612,7 @@ function CandidateDialog({
         )}
 
         {fromStudent ? (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5" aria-invalid={studentError ? true : undefined}>
             <p className="text-[13px] font-medium">
               Student <span className="text-danger">*</span>
             </p>
@@ -653,7 +655,7 @@ function CandidateDialog({
           <TextField label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} error={errors.full_name} autoFocus />
         )}
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" aria-invalid={errors.image ? true : undefined}>
           <p className="text-[13px] font-medium">Photo</p>
           {file ? (
             <>

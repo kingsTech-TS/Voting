@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/api/errors";
 import type { CursorPage, SentMessageOut, StaffOut } from "@/lib/api/types";
 import { formatWAT } from "@/lib/time";
 import { check, messageSchema, type FieldErrors } from "@/lib/validation";
+import { focusFirstError } from "@/lib/focus-error";
 import { useAllAdmins } from "../use-admins";
 
 export function SuperAdminMessages() {
@@ -42,7 +43,7 @@ function Compose({ admins, loadingAdmins }: { admins: StaffOut[]; loadingAdmins:
     const values = { to_all: toAll, recipient_ids: toAll ? [] : recipients, subject, body };
     const result = check(messageSchema, values);
     setErrors(result.errors ?? {});
-    if (!result.data) return;
+    if (!result.data) return focusFirstError();
     setLoading(true);
     try {
       await api<SentMessageOut>("super-admin/messages", { json: result.data });
@@ -73,7 +74,7 @@ function Compose({ admins, loadingAdmins }: { admins: StaffOut[]; loadingAdmins:
             Choose admins
           </label>
           {!toAll && (
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-2">
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-2" aria-invalid={errors.recipient_ids ? true : undefined}>
               {loadingAdmins ? (
                 <p className="p-2 text-sm text-muted">Loading admins…</p>
               ) : admins.length === 0 ? (
