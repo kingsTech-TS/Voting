@@ -59,11 +59,10 @@ export interface AdminCreatedOut {
   temporary_password: string;
 }
 
+/** Public, so it deliberately has no name or level (it must not reveal who a number belongs to). */
 export interface StudentLookupOut {
   identifier: string;
   id_type: IdType;
-  full_name: string;
-  level: string;
   /** Masked email the registration code goes to; null when the admin hasn't added one. */
   email_hint: string | null;
 }

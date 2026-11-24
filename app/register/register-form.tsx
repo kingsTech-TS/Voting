@@ -190,21 +190,12 @@ function DetailsStep({
             <Spinner className="size-4" /> Checking…
           </div>
         )}
-        {lookup.status === "found" && (
+        {lookup.status === "found" && lookup.data.email_hint && (
           <div className="rounded-2xl bg-primary-soft p-4">
-            <p className="text-xs font-bold text-primary">Is this you?</p>
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-              <dt className="text-muted">Full name</dt>
-              <dd className="font-semibold">{lookup.data.full_name}</dd>
-              <dt className="text-muted">Level</dt>
-              <dd className="font-semibold">{lookup.data.level}</dd>
-              {lookup.data.email_hint && (
-                <>
-                  <dt className="text-muted">Email</dt>
-                  <dd className="font-semibold break-all">{lookup.data.email_hint}</dd>
-                </>
-              )}
-            </dl>
+            <p className="text-xs font-bold text-primary">You&apos;re on the list</p>
+            <p className="mt-1 text-sm">
+              Your registration code will be sent to <span className="font-semibold break-all">{lookup.data.email_hint}</span>.
+            </p>
           </div>
         )}
         {lookup.status === "found" && !lookup.data.email_hint && (

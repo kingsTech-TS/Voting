@@ -158,12 +158,12 @@ function LookupCard() {
         <span className="ml-auto h-4 w-px animate-pulse bg-primary" />
       </div>
       <div className="mt-3 rounded-2xl bg-primary-soft p-3">
-        <p className="text-xs font-bold text-primary">Is this you?</p>
-        <div className="mt-2 flex items-center gap-3">
-          <Avatar name="Jane Doe" size={36} />
+        <div className="flex items-center gap-3">
           <div>
-            <p className="text-sm font-bold">Jane Doe</p>
-            <p className="text-xs text-muted">Level 300</p>
+            <p className="text-xs font-bold text-primary">You&apos;re on the list</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Code goes to <span className="font-semibold text-foreground">j**e@example.edu</span>
+            </p>
           </div>
           <span className="ml-auto flex size-6 items-center justify-center rounded-full bg-primary text-primary-fg">
             <IconCheck size={13} strokeWidth={3} />

@@ -431,13 +431,17 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
   const [loading, setLoading] = useState(false);
   const idChanged = normalizeIdentifier(values.identifier) !== student.identifier;
   const newEmail = values.email.trim().toLowerCase();
-  const emailChanged = newEmail !== "" && newEmail !== (student.email ?? "");
+  // A registered student's email is where their reset links go, so only the super admin (or the student,
+  // from their profile) can change it.
+  const emailLocked = student.is_registered;
+  const emailChanged = !emailLocked && newEmail !== "" && newEmail !== (student.email ?? "");
 
   const save = async () => {
     const result = check(studentUpdateSchema, values);
     const fieldErrors = result.errors ?? {};
     // An email can be changed but not removed.
-    if (student.email && !newEmail) fieldErrors.email = "Email address is required.";
+    if (!emailLocked && student.email && !newEmail) fieldErrors.email = "Email address is required.";
+    if (emailLocked) delete fieldErrors.email;
     setErrors(fieldErrors);
     if (!result.data || fieldErrors.email) return focusFirstError();
     setLoading(true);
@@ -456,7 +460,8 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
       onClose();
     } catch (err) {
       if (err instanceof ApiError && (err.code === "STUDENT_EXISTS" || err.field === "identifier")) setErrors({ identifier: err.message });
-      else if (err instanceof ApiError && (err.code === "EMAIL_IN_USE" || err.field === "email")) setErrors({ email: err.message });
+      else if (err instanceof ApiError && (err.code === "EMAIL_IN_USE" || err.code === "EMAIL_LOCKED" || err.field === "email"))
+        setErrors({ email: err.message });
       else return toast.error(errorMessage(err));
       focusFirstError();
     } finally {
@@ -515,9 +520,10 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
           value={values.email}
           onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))}
           error={errors.email}
+          disabled={emailLocked}
           hint={
-            student.is_registered
-              ? "Password resets and election results go here."
+            emailLocked
+              ? "This student has registered, so only they (from their profile) or the super admin can change it."
               : "The student's registration code is sent here."
           }
         />

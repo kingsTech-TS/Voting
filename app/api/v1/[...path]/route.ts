@@ -17,11 +17,38 @@ const BLOCKED = new Set([
   "admin/onboarding",
 ]);
 const PASS_RESPONSE_HEADERS = ["content-type", "retry-after", "x-request-id", "cache-control", "date"];
+// The live stream (EventSource) can't use the Authorization header on the backend: it takes a single-use
+// ticket in the URL instead. The ticket is fetched here, server-side, so it never reaches the browser.
+const LIVE_STREAM = /^live\/elections\/([^/]+)\/stream$/;
+const LIVE_TICKET = /^live\/elections\/[^/]+\/stream-ticket$/;
+
+/** Swap the cookie's access token for a stream ticket. Returns the query string, or the backend's error. */
+async function streamTicketSearch(req: NextRequest, electionId: string, headers: Headers): Promise<string | Response> {
+  const upstream = await fetch(backendUrl(`live/elections/${electionId}/stream-ticket`), {
+    method: "POST",
+    headers,
+    signal: req.signal,
+    cache: "no-store",
+  });
+  if (!upstream.ok) {
+    const out = new Headers({ "content-type": upstream.headers.get("content-type") || "application/json" });
+    const retryAfter = upstream.headers.get("retry-after");
+    if (retryAfter) out.set("retry-after", retryAfter);
+    return new Response(upstream.body, { status: upstream.status, headers: out });
+  }
+  const { ticket } = (await upstream.json()) as { ticket: string };
+  return `?ticket=${encodeURIComponent(ticket)}`;
+}
 
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await ctx.params;
   const joined = path.join("/");
-  if (!ALLOWED_ROOTS.has(path[0]) || BLOCKED.has(joined) || path.some((p) => p === ".." || p === ".")) {
+  if (
+    !ALLOWED_ROOTS.has(path[0]) ||
+    BLOCKED.has(joined) ||
+    LIVE_TICKET.test(joined) || // tickets are only ever handled here, server-side
+    path.some((p) => p === ".." || p === ".")
+  ) {
     return errorJson(404, "NOT_FOUND", "Not found.");
   }
   const blocked = checkOrigin(req);
@@ -34,9 +61,17 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (accept) headers.set("accept", accept);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.body !== null;
+  const live = req.method === "GET" ? LIVE_STREAM.exec(joined) : null;
   let upstream: Response;
   try {
-    upstream = await fetch(backendUrl(joined, req.nextUrl.search), {
+    let search = req.nextUrl.search;
+    if (live) {
+      const ticket = await streamTicketSearch(req, live[1], headers);
+      if (typeof ticket !== "string") return ticket;
+      search = ticket;
+      headers.delete("authorization"); // the ticket is the credential for the stream itself
+    }
+    upstream = await fetch(backendUrl(joined, search), {
       method: req.method,
       headers,
       body: hasBody ? req.body : undefined,

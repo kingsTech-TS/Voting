@@ -63,7 +63,7 @@ This repo is the **Next.js frontend**. The API lives in the sibling repo
 
 - Create admins (the temporary password is shown once), and suspend, unsuspend, reset or delete them.
 - Activity log of every staff action, filterable by admin, action and date.
-- Read-only view of all students and elections.
+- View all students and elections. Only the super admin can change the email of a student who has already registered (admins can't, since reset links go there).
 - Live view of any election, and **Stop election** while voting is open (requires a reason).
 - Send messages to all admins or selected ones, with read receipts.
 
@@ -182,7 +182,8 @@ Browser ──same origin──► Next.js
 
 ### Live results
 
-The live count uses Server-Sent Events through the BFF, so the token stays out of the URL. If the
+The live count uses Server-Sent Events through the BFF, so the token stays out of the URL: the BFF swaps
+the session cookie for a single-use stream ticket from the API on every (re)connect. If the
 stream drops, it refreshes the session and reconnects with backoff, and falls back to polling after
 three failures (`lib/api/use-live-tally.ts`).
 
@@ -198,7 +199,7 @@ delay, so 2,000 clients don't hit the API in the same second.
 | Path                          | Who         | Purpose                                   |
 | ----------------------------- | ----------- | ----------------------------------------- |
 | `/`                           | Everyone    | Landing page                              |
-| `/register`                   | Students    | Registration: name lookup, password, email code |
+| `/register`                   | Students    | Registration: ID check, password, email code |
 | `/login`                      | Students    | Student sign-in                           |
 | `/staff/login`                | Staff       | Admin and super admin sign-in             |
 | `/student`                    | Student     | Dashboard: ballot, waiting state, results |
@@ -217,7 +218,7 @@ delay, so 2,000 clients don't hit the API in the same second.
 | `/super-admin/admins`         | Super admin | Admin management                          |
 | `/super-admin/elections`      | Super admin | Election list                             |
 | `/super-admin/elections/[id]` | Super admin | Live view and **Stop election**           |
-| `/super-admin/students`       | Super admin | Read-only student list                    |
+| `/super-admin/students`       | Super admin | Student list; change a registered student's email |
 | `/super-admin/audit-logs`     | Super admin | Activity log                              |
 | `/super-admin/messages`       | Super admin | Compose messages and see read receipts    |
 
