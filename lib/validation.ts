@@ -79,6 +79,9 @@ export const adminOnboardingSchema = z
     path: ["new_password"],
   });
 
+/** The standard levels (the backend promotes 100 → 200 … 500 → 600 each session). */
+export const STUDENT_LEVELS = ["100", "200", "300", "400", "500", "600"] as const;
+
 export const studentCreateSchema = z.object({
   identifier,
   full_name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(120),

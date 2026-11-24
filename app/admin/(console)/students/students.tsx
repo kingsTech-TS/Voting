@@ -7,11 +7,19 @@ import { toast } from "sonner";
 import { IconCheck, IconPlus, IconUpload } from "@/components/icons";
 import { StudentsTable } from "@/components/staff";
 import { buttonClass } from "@/components/styles";
-import { Alert, Button, ConfirmDialog, Dialog, PageHeader, TextField } from "@/components/ui";
+import { Alert, Button, ConfirmDialog, Dialog, PageHeader, SelectField, TextField } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { ApiError, errorMessage } from "@/lib/api/errors";
 import type { MessageOut, SessionStateOut, StudentBulkDeleteOut, StudentOut } from "@/lib/api/types";
-import { IDENTIFIER_HINT, check, normalizeIdentifier, studentCreateSchema, studentUpdateSchema, type FieldErrors } from "@/lib/validation";
+import {
+  IDENTIFIER_HINT,
+  STUDENT_LEVELS,
+  check,
+  normalizeIdentifier,
+  studentCreateSchema,
+  studentUpdateSchema,
+  type FieldErrors,
+} from "@/lib/validation";
 import { focusFirstError } from "@/lib/focus-error";
 
 type Pending = { kind: "edit" | "delete"; student: StudentOut } | null;
@@ -407,16 +415,39 @@ function AddStudentDialog({ open, onClose, onSaved }: { open: boolean; onClose: 
           error={errors.email}
           hint="The student's registration code is sent here, so only they can claim the account."
         />
-        <TextField
-          label="Level"
-          placeholder="e.g. 300"
-          value={values.level}
-          onChange={(e) => setValues((v) => ({ ...v, level: e.target.value }))}
-          error={errors.level}
-        />
+        <LevelField value={values.level} onChange={(level) => setValues((v) => ({ ...v, level }))} error={errors.level} />
         <button type="submit" className="hidden" />
       </form>
     </Dialog>
+  );
+}
+
+/** Level picker: 100-600. A student already in another level (e.g. "Spill-over") keeps it as an option,
+ * so opening the edit dialog never changes their level by accident. */
+function LevelField({
+  value,
+  current,
+  onChange,
+  error,
+}: {
+  value: string;
+  current?: string;
+  onChange: (level: string) => void;
+  error?: string;
+}) {
+  const extra = current && !(STUDENT_LEVELS as readonly string[]).includes(current) ? current : null;
+  return (
+    <SelectField label="Level" value={value} onChange={(e) => onChange(e.target.value)} error={error}>
+      <option value="" disabled>
+        Choose a level
+      </option>
+      {STUDENT_LEVELS.map((l) => (
+        <option key={l} value={l}>
+          {l} level
+        </option>
+      ))}
+      {extra && <option value={extra}>{extra}</option>}
+    </SelectField>
   );
 }
 
@@ -533,7 +564,12 @@ function EditStudentDialog({ student, onClose, onSaved }: { student: StudentOut;
         {emailChanged && !student.is_registered && student.email && (
           <Alert tone="info">Any registration code already sent to the old address will stop working.</Alert>
         )}
-        <TextField label="Level" value={values.level} onChange={(e) => setValues((v) => ({ ...v, level: e.target.value }))} error={errors.level} />
+        <LevelField
+          value={values.level}
+          current={student.level}
+          onChange={(level) => setValues((v) => ({ ...v, level }))}
+          error={errors.level}
+        />
         <button type="submit" hidden />
       </form>
     </Dialog>

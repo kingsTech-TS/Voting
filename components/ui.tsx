@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -13,7 +14,7 @@ import {
   type TextareaHTMLAttributes,
 } from "react";
 import Link from "next/link";
-import { IconAlert, IconArrowLeft, IconCheck, IconInfo, IconX } from "./icons";
+import { IconAlert, IconArrowLeft, IconCheck, IconEye, IconEyeOff, IconInfo, IconX } from "./icons";
 import { buttonClass, type ButtonSize, type ButtonVariant } from "./styles";
 
 // ---- Button ---------------------------------------------------------------------------------------
@@ -110,18 +111,47 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: ReactNode;
 }
 
+/** Every `type="password"` field gets a show/hide button. */
 export function TextField({ label, error, hint, className, ...rest }: TextFieldProps) {
+  const isPassword = rest.type === "password";
+  const [revealed, setRevealed] = useState(false);
   return (
     <Field label={label} error={error} hint={hint} className={className} required={rest.required}>
-      {(id, describedBy) => (
-        <input
-          id={id}
-          aria-invalid={!!error || undefined}
-          aria-describedby={describedBy}
-          className={clsx(inputClass, "h-11", error && "border-danger focus:border-danger focus:ring-danger/15")}
-          {...rest}
-        />
-      )}
+      {(id, describedBy) => {
+        const input = (
+          <input
+            id={id}
+            aria-invalid={!!error || undefined}
+            aria-describedby={describedBy}
+            className={clsx(
+              inputClass,
+              "h-11",
+              isPassword && "pr-11",
+              error && "border-danger focus:border-danger focus:ring-danger/15",
+            )}
+            {...rest}
+            type={isPassword && revealed ? "text" : rest.type}
+          />
+        );
+        if (!isPassword) return input;
+        return (
+          <div className="relative">
+            {input}
+            <button
+              type="button"
+              onClick={() => setRevealed((r) => !r)}
+              disabled={rest.disabled}
+              aria-label={revealed ? "Hide password" : "Show password"}
+              aria-pressed={revealed}
+              aria-controls={id}
+              title={revealed ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-3xl text-muted transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {revealed ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+            </button>
+          </div>
+        );
+      }}
     </Field>
   );
 }
@@ -153,6 +183,31 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
     <select className={clsx(inputClass, "h-11 cursor-pointer pr-8", className)} {...rest}>
       {children}
     </select>
+  );
+}
+
+interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  label: string;
+  error?: string | null;
+  hint?: ReactNode;
+}
+
+/** A labelled <Select>, like TextField. */
+export function SelectField({ label, error, hint, className, children, ...rest }: SelectFieldProps) {
+  return (
+    <Field label={label} error={error} hint={hint} className={className} required={rest.required}>
+      {(id, describedBy) => (
+        <Select
+          id={id}
+          aria-invalid={!!error || undefined}
+          aria-describedby={describedBy}
+          className={clsx(error && "border-danger focus:border-danger focus:ring-danger/15")}
+          {...rest}
+        >
+          {children}
+        </Select>
+      )}
+    </Field>
   );
 }
 
